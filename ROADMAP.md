@@ -15,7 +15,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | In progress  | 5 / 8    |
-| 1   | Scope definition                        | In progress  | 5 / 9    |
+| 1   | Scope definition                        | In progress  | 9 / 12   |
 | 2   | Infrastructure (CLI, diagnostics, tests)| Not started  | 0 / 8    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 6    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime and standard library            | Not started  | 0 / 9    |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 10 / 103 items done.**
+**Overall: 14 / 106 items done.**
 
 ---
 
@@ -48,8 +48,12 @@ Decisions to take with the owner before writing the compiler core.
 
 - [x] Reference C++ standard and supported language subset — basic C++11 (D-010).
 - [x] Standard library policy — separate, tree-shaken, platform-aware bundle (D-013).
-- [ ] Standard library details: first headers, platform selection, linking.
-- [ ] Numeric, pointer and reference semantics in JavaScript.
+- [x] Standard library header order — all headers, most used first (D-017).
+- [x] Platform selection — CLI flags only (D-015).
+- [x] `extern "C"` exports in mixed contexts — chosen by a CLI flag (D-014, D-015).
+- [ ] Linking of the separate standard library file to the program.
+- [x] Integer and floating-point semantics — faithful to C++ (D-016).
+- [ ] Pointer, reference and memory management semantics.
 - [x] Technique for hiding private/protected members — obfuscated names (D-012).
 - [x] Default output target — ES5 (D-011).
 - [ ] Full list and names of CLI flags.
@@ -156,7 +160,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Memory model helpers (pointers / references).
 - [ ] Per-build generator of obfuscated member names (D-012).
 - [ ] Platform layer: browser, Node.js, mixed contexts such as Electron (D-013).
-- [ ] Standard library headers in JavaScript (first set from Phase 1).
+- [ ] Standard library headers in JavaScript, most used first (D-017).
 - [ ] Usage analysis and dead-code elimination of the standard library.
 - [ ] Separate standard library bundle output.
 - [ ] Flag to embed the standard library bundle in the main output.
@@ -179,4 +183,6 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-12** — Roadmap created; Phase 0 started (documentation and license).
 - **2026-11-12** — Phase 1: decisions D-010 to D-013 taken; Phases 5, 6, 7 and 10
   extended accordingly (C++11 features, standard library).
+- **2026-11-12** — Decisions D-015 (platform flags), D-016 (integer semantics),
+  D-017 (standard library order).
 - **2026-11-12** — Decision D-014 (`extern "C"` exports); Phases 6 and 9 extended.

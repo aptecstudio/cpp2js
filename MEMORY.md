@@ -151,9 +151,9 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
     behind a small platform layer.
 - **Reason**: owner requirement; keeps output small and lets several programs
   share one standard library file.
-- **Open points**: which headers are supported first; whether the platform is
-  chosen by a flag, detected at runtime, or both; how the separate library
-  file is linked to the program (global object, `require`, script order).
+- **Header order and platform selection**: see D-015 and D-017.
+- **Open point**: how the separate library file is linked to the program
+  (global object, `require`, script order).
 
 ### D-014 — `extern "C"` symbols become the bundle's public exports
 
@@ -172,8 +172,54 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Consequences**: `extern "C"` functions cannot be overloaded (as in C++);
   the semantic phase reports duplicate C-linkage names across translation
   units. Exported names must be valid JavaScript identifiers.
-- **Open point**: behaviour in mixed contexts (Electron) — export to
-  `exports`, to the global object, or both.
+- **Mixed contexts (Electron)**: the destination is chosen with a CLI flag
+  (D-015).
+
+### D-015 — Execution platform chosen only by CLI flags
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: the execution context is fixed at compile time with a flag
+  (working name `--platform browser|node|mixed`); the generated code does
+  **not** detect the context at runtime. For `mixed` (Electron and similar),
+  a further flag (working name `--exports exports|global|both`) chooses where
+  `extern "C"` symbols are exported. Final flag names are fixed in the CLI
+  design task.
+- **Reason**: owner choice; smaller and more predictable bundles, since only
+  the platform layer for the selected context is emitted.
+- **Discarded**: runtime detection only; flag plus runtime `auto` mode.
+
+### D-016 — Faithful C++ integer semantics
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: integer types keep C++ behaviour in the generated code:
+  32-bit `int`/`unsigned` with wrap-around (`| 0`, `>>> 0`, `Math.imul`),
+  division truncated toward zero, `char`/`short` truncated to their width,
+  `long long` implemented by a 64-bit runtime helper (ES5 has no `BigInt`).
+  `float`/`double` map to JavaScript numbers (`float` rounded with a
+  `Math.fround` polyfill on ES5).
+- **Reason**: programs must produce the same results as when compiled
+  natively.
+- **Discarded**: plain JavaScript numbers everywhere (faster and more
+  readable, but different overflow and division results).
+
+### D-017 — Full standard library, most-used headers first
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: the goal is to implement **all** standard library headers
+  that are meaningful in JavaScript, in order of real-world usage. Planned
+  order (to be refined): `<iostream>`, `<string>`, `<vector>`, `<cmath>`,
+  `<cstdlib>`, `<cstdio>`, `<cstring>`, `<algorithm>`, `<map>`, `<set>`,
+  `<unordered_map>`, `<unordered_set>`, `<sstream>`, `<utility>`, `<memory>`,
+  `<functional>`, `<stdexcept>`, `<fstream>`, `<iomanip>`, `<list>`,
+  `<deque>`, `<queue>`, `<stack>`, `<array>`, `<tuple>`, `<chrono>`,
+  `<random>`, `<limits>`, `<climits>`, `<cctype>`, `<numeric>`, `<iterator>`,
+  then the remaining headers.
+- **Reason**: owner requirement; implementing by usage gives useful programs
+  as early as possible.
+- **Notes**: many headers depend on templates, so templates (D-010) are a
+  prerequisite for containers and algorithms. Headers that cannot work in a
+  given context (e.g. `<fstream>` in the browser) report a compile-time
+  diagnostic for that platform.
 
 ---
 
@@ -295,9 +341,8 @@ time and simply use the obfuscated names.
 
 ## 5. Open questions (to discuss with the owner)
 
-- Semantics of numeric types (32-bit integer wrap-around via `| 0`, 64-bit
-  integers, `char`), pointers and references, manual memory management.
-- Standard library: first headers to support; platform selection (flag,
-  runtime detection, or both); how the separate library file is linked.
+- Pointers, references, pointer arithmetic and manual memory management
+  (`new`/`delete`).
+- How the separate standard library file is linked to the program.
 - Full list and names of CLI flags.
 - Minimum Node.js version supported by the CLI.
