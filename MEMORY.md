@@ -152,8 +152,7 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Reason**: owner requirement; keeps output small and lets several programs
   share one standard library file.
 - **Header order and platform selection**: see D-015 and D-017.
-- **Open point**: how the separate library file is linked to the program
-  (global object, `require`, script order).
+- **Linking of the separate library file**: see D-019.
 
 ### D-014 — `extern "C"` symbols become the bundle's public exports
 
@@ -221,11 +220,54 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   given context (e.g. `<fstream>` in the browser) report a compile-time
   diagnostic for that platform.
 
+### D-018 — Pointers and references as JavaScript references
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**:
+  - pointers and references to class objects become plain JavaScript object
+    references; `nullptr` becomes `null`;
+  - pointers and references to primitive values, and pointer arithmetic over
+    arrays, use a small runtime helper (a *cell*: backing array + offset);
+  - `new` creates the object, `delete` calls the destructor; memory itself is
+    reclaimed by the JavaScript garbage collector. `new[]`/`delete[]` work on
+    arrays the same way.
+- **Reason**: keeps the output readable and fast while preserving the
+  observable behaviour of well-formed programs.
+- **Discarded**: simulated linear heap on `ArrayBuffer` (maximum fidelity,
+  but unreadable output and `ArrayBuffer` is not guaranteed in ES5 engines).
+- **Known limit**: casts between unrelated pointer types and
+  `reinterpret_cast` on memory layout cannot be supported faithfully; they
+  are reported as compile-time errors.
+
+### D-019 — Separate standard library linked through a global object
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: when the standard library is emitted as a separate file, it
+  always registers itself on the global object (working name `cpp2jsStd`) in
+  every context (browser, Node.js, mixed), and the program reads it from
+  there. The library file must therefore be loaded before the program
+  (`<script>` order in the browser, `require` of the library first in
+  Node.js). When the library is embedded (D-013), no global is created.
+- **Reason**: owner choice; one linking mechanism for every platform.
+- **Discarded**: platform-dependent linking (`require` on Node.js, global in
+  the browser).
+
+### D-020 — Minimum Node.js version for the CLI: 0.10
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: the transpiler CLI must run on Node.js **0.10 and later**.
+  Only APIs available in Node 0.10 are used (`fs.*Sync`, `path`,
+  `process.argv`, `process.exit`, `process.stdout.write`); no `fs.mkdirSync`
+  with `recursive`, no `Buffer.from` (use `new Buffer` guarded by a helper).
+- **Reason**: consistent with the ES5-only implementation (D-001).
+
 ---
 
 ## 2. Source tree structure (planned)
 
 This is the planned layout; it will be updated as the code is written.
+Directories that are still empty contain a `.gitkeep` file, to be removed as
+soon as the directory gets its first real file.
 
 ```
 cpp2js/
@@ -252,6 +294,9 @@ cpp2js/
 ├── test/                    # Unit tests (no external test framework)
 │   └── fixtures/            # C++ inputs and expected JS outputs
 ├── examples/                # Sample C++ programs
+├── .editorconfig            # Mirrors the conventions of section 3.1
+├── .gitignore
+├── package.json             # No dependencies; "bin", "engines": node >=0.10
 ├── AGENTS.md
 ├── MEMORY.md
 ├── ROADMAP.md
@@ -341,8 +386,4 @@ time and simply use the obfuscated names.
 
 ## 5. Open questions (to discuss with the owner)
 
-- Pointers, references, pointer arithmetic and manual memory management
-  (`new`/`delete`).
-- How the separate standard library file is linked to the program.
 - Full list and names of CLI flags.
-- Minimum Node.js version supported by the CLI.

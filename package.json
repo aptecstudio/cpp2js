@@ -1,0 +1,36 @@
+{
+  "name": "cpp2js",
+  "version": "0.0.0",
+  "description": "Command-line transpiler from C++ to a self-contained ES5/ES6 JavaScript bundle.",
+  "keywords": [
+    "c++",
+    "cpp",
+    "transpiler",
+    "compiler",
+    "javascript",
+    "es5",
+    "es6",
+    "source-map"
+  ],
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aptecstudio/cpp2js.git"
+  },
+  "main": "src/index.js",
+  "bin": {
+    "cpp2js": "bin/cpp2js.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "engines": {
+    "node": ">=0.10"
+  }
+}

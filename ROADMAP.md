@@ -14,8 +14,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
-| 0   | Project setup                           | In progress  | 5 / 8    |
-| 1   | Scope definition                        | In progress  | 9 / 12   |
+| 0   | Project setup                           | Done         | 8 / 8    |
+| 1   | Scope definition                        | In progress  | 11 / 12  |
 | 2   | Infrastructure (CLI, diagnostics, tests)| Not started  | 0 / 8    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 6    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime and standard library            | Not started  | 0 / 9    |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 14 / 106 items done.**
+**Overall: 20 / 106 items done.**
 
 ---
 
@@ -38,9 +38,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] Write `MEMORY.md` (decisions, structure, conventions).
 - [x] Write `ROADMAP.md` (this file).
 - [x] Write `README.md` and add the GPL-3.0 `LICENSE`.
-- [ ] Add `package.json` (no dependencies; `bin` entry, `engines` field).
-- [ ] Add `.gitignore` and `.editorconfig`.
-- [ ] Create the empty source tree described in `MEMORY.md`.
+- [x] Add `package.json` (no dependencies; `bin` entry, `engines` field).
+- [x] Add `.gitignore` and `.editorconfig`.
+- [x] Create the empty source tree described in `MEMORY.md`.
 
 ## Phase 1 — Scope definition
 
@@ -51,14 +51,14 @@ Decisions to take with the owner before writing the compiler core.
 - [x] Standard library header order — all headers, most used first (D-017).
 - [x] Platform selection — CLI flags only (D-015).
 - [x] `extern "C"` exports in mixed contexts — chosen by a CLI flag (D-014, D-015).
-- [ ] Linking of the separate standard library file to the program.
+- [x] Linking of the separate standard library file — global object (D-019).
 - [x] Integer and floating-point semantics — faithful to C++ (D-016).
-- [ ] Pointer, reference and memory management semantics.
+- [x] Pointer, reference and memory management semantics (D-018).
 - [x] Technique for hiding private/protected members — obfuscated names (D-012).
 - [x] Default output target — ES5 (D-011).
 - [ ] Full list and names of CLI flags.
 - [x] Bundle shape — executable program calling `main()` (D-011).
-- [ ] Minimum supported Node.js version.
+- [x] Minimum supported Node.js version — 0.10 (D-020).
 
 ## Phase 2 — Infrastructure
 
@@ -186,3 +186,7 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-12** — Decision D-014 (`extern "C"` exports); Phases 6 and 9 extended.
 - **2026-11-12** — Decisions D-015 (platform flags), D-016 (integer semantics),
   D-017 (standard library order).
+- **2026-11-12** — Decisions D-018 (pointers), D-019 (standard library linking),
+  D-020 (Node.js 0.10+).
+- **2026-11-12** — Phase 0 completed (`package.json`, `.gitignore`, `.editorconfig`,
+  source tree). Next: CLI flag design (Phase 1), then Phase 2.
