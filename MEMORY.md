@@ -261,6 +261,50 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   with `recursive`, no `Buffer.from` (use `new Buffer` guarded by a helper).
 - **Reason**: consistent with the ES5-only implementation (D-001).
 
+### D-021 — Command-line interface
+
+- **Status**: Accepted (owner, 2026-11-12). Fixes the names announced as
+  "working names" in D-015 and D-019.
+- **Synopsis**: `cpp2js [options] <file.cpp>...`
+
+| Flag | Meaning | Default |
+| ---- | ------- | ------- |
+| `<file.cpp>...` | Translation units to compile and bundle | required |
+| `-o`, `--output <file>` | Output bundle path | **standard output** |
+| `--target <es5\|es6>` | JavaScript language level of the output | `es5` |
+| `--platform <browser\|node\|mixed>` | Execution context (D-015) | **`browser`** |
+| `--exports <exports\|global\|both>` | Where `extern "C"` symbols go (D-014) | `exports` on node, `global` on browser, `both` on mixed |
+| `--minify` | Minified instead of pretty output | off |
+| `--source-map [external\|inline]` | Emit a source map; bare flag means `external` | off |
+| `--embed-std` | Embed the standard library in the bundle (D-013) | off |
+| `--std-out <file>` | Path of the separate standard library file | `<output>.std.js` |
+| `-I <dir>` | Add an include search path (repeatable) | — |
+| `-D <name>[=<value>]` | Define a macro (repeatable) | — |
+| `-U <name>` | Undefine a macro (repeatable) | — |
+| `--check` | Only syntax and type checking, no output | off |
+| `-Werror` | Treat warnings as errors | off |
+| `-w` | Suppress warnings | off |
+| `--quiet` | Only errors are printed | off |
+| `--verbose` | Print the phases and the files written | off |
+| `-h`, `--help` | Show usage | — |
+| `-v`, `--version` | Show version | — |
+
+- **Rules**:
+  - when the bundle goes to standard output (no `-o`), the files that need a
+    path must get one explicitly: the separate standard library requires
+    `--std-out` (or `--embed-std`), an `external` source map is not allowed
+    (use `inline`). Otherwise the CLI stops with a usage error (exit code 2);
+  - `--exports` is accepted on every platform; on `browser` the value
+    `exports` is a usage error;
+  - `-Werror` and `-w` together are a usage error; so are `--quiet` and
+    `--verbose`;
+  - diagnostics always go to standard error, never mixed with the bundle.
+- **Reason**: owner choices for defaults (browser platform, stdout output,
+  separate standard library) and for the extra flags (`--check`, `-Werror`,
+  `-w`, `--quiet`, `--verbose`).
+- **Discarded**: `-E` (preprocess only) for now; `a.js` as default output;
+  `node` as default platform.
+
 ---
 
 ## 2. Source tree structure (planned)
@@ -386,4 +430,4 @@ time and simply use the obfuscated names.
 
 ## 5. Open questions (to discuss with the owner)
 
-- Full list and names of CLI flags.
+- None at the moment.

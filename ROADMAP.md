@@ -15,7 +15,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
-| 1   | Scope definition                        | In progress  | 11 / 12  |
+| 1   | Scope definition                        | Done         | 12 / 12  |
 | 2   | Infrastructure (CLI, diagnostics, tests)| Not started  | 0 / 8    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 6    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime and standard library            | Not started  | 0 / 9    |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 20 / 106 items done.**
+**Overall: 21 / 106 items done.**
 
 ---
 
@@ -56,14 +56,14 @@ Decisions to take with the owner before writing the compiler core.
 - [x] Pointer, reference and memory management semantics (D-018).
 - [x] Technique for hiding private/protected members — obfuscated names (D-012).
 - [x] Default output target — ES5 (D-011).
-- [ ] Full list and names of CLI flags.
+- [x] Full list and names of CLI flags (D-021).
 - [x] Bundle shape — executable program calling `main()` (D-011).
 - [x] Minimum supported Node.js version — 0.10 (D-020).
 
 ## Phase 2 — Infrastructure
 
 - [ ] CLI entry point `bin/cpp2js.js` with argument parser (no libraries).
-- [ ] `--help` and `--version`.
+- [ ] `--help` and `--version`; usage errors and checks of D-021 (exit code 2).
 - [ ] Programmatic API `compile(options)` in `src/index.js`.
 - [ ] Source file abstraction with line/column mapping.
 - [ ] Diagnostics: errors, warnings, notes; compiler-style formatting.
@@ -190,3 +190,4 @@ Decisions to take with the owner before writing the compiler core.
   D-020 (Node.js 0.10+).
 - **2026-11-12** — Phase 0 completed (`package.json`, `.gitignore`, `.editorconfig`,
   source tree). Next: CLI flag design (Phase 1), then Phase 2.
+- **2026-11-12** — Phase 1 completed with D-021 (CLI). Next: Phase 2.

@@ -30,17 +30,38 @@ single, self-contained JavaScript bundle targeting **ES5** or **ES6**.
 
 ## Planned usage
 
-The command-line interface is still being designed; the example below shows
-the intended shape and may change.
+The interface below is designed but not implemented yet.
 
 ```sh
+# Browser bundle (ES5, readable) plus the separate standard library app.std.js
 cpp2js main.cpp shape.cpp -I include -o dist/app.js
-cpp2js main.cpp --target es6 --minify --source-map -o dist/app.min.js
+
+# Node.js bundle, ES6, minified, with an external source map
+cpp2js main.cpp --platform node --target es6 --minify --source-map -o dist/app.js
+
+# Only check syntax and types
+cpp2js main.cpp --check
 ```
 
-Flags under consideration include the output target (`--target`), minified
-output (`--minify`), source maps (`--source-map`), include paths (`-I`) and
-macro definitions (`-D`).
+| Option | Description |
+| ------ | ----------- |
+| `-o, --output <file>` | Output file (default: standard output) |
+| `--target <es5\|es6>` | Output language level (default: `es5`) |
+| `--platform <browser\|node\|mixed>` | Execution context (default: `browser`) |
+| `--exports <exports\|global\|both>` | Where `extern "C"` functions are exported |
+| `--minify` | Minified output instead of readable code |
+| `--source-map [external\|inline]` | Generate a source map |
+| `--embed-std` | Put the standard library inside the bundle |
+| `--std-out <file>` | Path of the separate standard library file |
+| `-I <dir>`, `-D <name>[=<value>]`, `-U <name>` | Preprocessor options |
+| `--check` | Check syntax and types without generating output |
+| `-Werror`, `-w` | Warnings as errors / no warnings |
+| `--quiet`, `--verbose` | Output verbosity |
+| `-h, --help`, `-v, --version` | Help and version |
+
+A C++ program becomes a JavaScript program: the bundle runs `main()` when it
+is loaded. Functions declared `extern "C"` are also exported, on `exports` in
+Node.js or on the global object in the browser.
 
 ## How it works
 
