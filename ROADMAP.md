@@ -15,19 +15,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | In progress  | 5 / 8    |
-| 1   | Scope definition                        | Not started  | 0 / 7    |
+| 1   | Scope definition                        | In progress  | 5 / 9    |
 | 2   | Infrastructure (CLI, diagnostics, tests)| Not started  | 0 / 8    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 6    |
-| 5   | Parser and AST                          | Not started  | 0 / 10   |
-| 6   | Semantic analysis                       | Not started  | 0 / 10   |
-| 7   | Lowering and code generation            | Not started  | 0 / 10   |
+| 5   | Parser and AST                          | Not started  | 0 / 11   |
+| 6   | Semantic analysis                       | Not started  | 0 / 12   |
+| 7   | Lowering and code generation            | Not started  | 0 / 11   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 7    |
-| 9   | Bundler                                 | Not started  | 0 / 5    |
-| 10  | Runtime support                         | Not started  | 0 / 5    |
+| 9   | Bundler                                 | Not started  | 0 / 6    |
+| 10  | Runtime and standard library            | Not started  | 0 / 9    |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 5 / 92 items done.**
+**Overall: 10 / 103 items done.**
 
 ---
 
@@ -46,12 +46,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 
 Decisions to take with the owner before writing the compiler core.
 
-- [ ] Reference C++ standard and supported language subset.
-- [ ] Standard library policy (none, or a runtime subset).
+- [x] Reference C++ standard and supported language subset — basic C++11 (D-010).
+- [x] Standard library policy — separate, tree-shaken, platform-aware bundle (D-013).
+- [ ] Standard library details: first headers, platform selection, linking.
 - [ ] Numeric, pointer and reference semantics in JavaScript.
-- [ ] Technique for hiding private/protected members (per target).
-- [ ] Default output target (ES5 or ES6) and full list of CLI flags.
-- [ ] Bundle shape: executable program (`main`) vs library exports.
+- [x] Technique for hiding private/protected members — obfuscated names (D-012).
+- [x] Default output target — ES5 (D-011).
+- [ ] Full list and names of CLI flags.
+- [x] Bundle shape — executable program calling `main()` (D-011).
 - [ ] Minimum supported Node.js version.
 
 ## Phase 2 — Infrastructure
@@ -95,8 +97,9 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Inheritance (single; multiple if in scope).
 - [ ] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`.
 - [ ] Expressions with full C++ precedence and associativity.
-- [ ] Enumerations.
-- [ ] Templates (if in scope).
+- [ ] Enumerations (including `enum class`).
+- [ ] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas.
+- [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
 
 ## Phase 6 — Semantic analysis
@@ -110,6 +113,8 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Access control: `public` / `protected` / `private`.
 - [ ] `friend` functions and classes.
 - [ ] Virtual functions and overriding.
+- [ ] `auto` type deduction and lambda captures.
+- [ ] `extern "C"` linkage: no overloading, duplicate-name checks (D-014).
 - [ ] Semantic diagnostics.
 
 ## Phase 7 — Lowering and code generation
@@ -119,7 +124,8 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Free functions and global variables.
 - [ ] Classes -> ES5 constructor functions / ES6 classes.
 - [ ] Inheritance and virtual dispatch.
-- [ ] Private/protected member protection (technique from Phase 1).
+- [ ] Private/protected members as obfuscated non-enumerable properties (D-012).
+- [ ] Lambdas -> JavaScript closures (by-value / by-reference captures).
 - [ ] Numeric semantics (integer arithmetic, division, overflow).
 - [ ] Control flow (including `switch` fall-through and `goto` if in scope).
 - [ ] ES5 emitter.
@@ -139,17 +145,22 @@ Decisions to take with the owner before writing the compiler core.
 
 - [ ] Combine multiple translation units into one output file.
 - [ ] Link symbols across translation units (one definition rule checks).
-- [ ] Module wrapper of the bundle (IIFE; export format from Phase 1).
-- [ ] Entry point handling (`main` or exported API).
+- [ ] Module wrapper of the bundle (IIFE).
+- [ ] Entry point: call `main()` and propagate its return code (D-011).
+- [ ] Export `extern "C"` symbols: `exports` on Node.js, global object in the browser (D-014).
 - [ ] Embed only the runtime helpers actually used.
 
-## Phase 10 — Runtime support
+## Phase 10 — Runtime and standard library
 
 - [ ] Integer arithmetic helpers.
-- [ ] Memory model helpers (pointers / references, if in scope).
-- [ ] Private member storage helpers.
-- [ ] Standard library subset (if in scope).
-- [ ] Runtime tests on both ES5 and ES6 targets.
+- [ ] Memory model helpers (pointers / references).
+- [ ] Per-build generator of obfuscated member names (D-012).
+- [ ] Platform layer: browser, Node.js, mixed contexts such as Electron (D-013).
+- [ ] Standard library headers in JavaScript (first set from Phase 1).
+- [ ] Usage analysis and dead-code elimination of the standard library.
+- [ ] Separate standard library bundle output.
+- [ ] Flag to embed the standard library bundle in the main output.
+- [ ] Runtime and standard library tests on ES5 and ES6, per platform.
 
 ## Phase 11 — Quality, documentation, release
 
@@ -166,3 +177,6 @@ Decisions to take with the owner before writing the compiler core.
 ## Change log of this roadmap
 
 - **2026-11-12** — Roadmap created; Phase 0 started (documentation and license).
+- **2026-11-12** — Phase 1: decisions D-010 to D-013 taken; Phases 5, 6, 7 and 10
+  extended accordingly (C++11 features, standard library).
+- **2026-11-12** — Decision D-014 (`extern "C"` exports); Phases 6 and 9 extended.

@@ -42,8 +42,7 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   minified output.
 - **Reason**: required by the brief. Readable output is the default because
   it makes the transpiler's behaviour easy to inspect and debug.
-- **Open point**: the default target (ES5 or ES6) is still to be decided
-  with the owner (see section 5).
+- **Default target**: **ES5** (decided in D-011).
 
 ### D-004 — Optional source maps
 
@@ -75,14 +74,12 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 
 ### D-007 — Protection of private and protected members
 
-- **Status**: Accepted (project brief) — **implementation strategy open**.
+- **Status**: Accepted (project brief); technique chosen in D-012.
 - **Decision**: private and protected members must not be directly
   reachable from code outside the bundle; only public members are exposed
   directly.
 - **Reason**: required by the brief; preserves the C++ encapsulation
   guarantees at runtime.
-- **Open point**: the concrete technique is to be decided with the owner
-  (see section 5). Candidate techniques are listed in section 4.
 
 ### D-008 — Language and style of the repository
 
@@ -96,6 +93,87 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Status**: Accepted (project brief).
 - **Decision**: all work on `main`; the project is licensed GPL-3.0 (full
   text in `LICENSE`).
+
+### D-010 — Reference standard: basic C++11
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: the first goal is a basic C++11 subset: classes, single
+  inheritance, virtual functions, namespaces, overloading, enums, plus the
+  C++11 features `auto`, `nullptr`, `enum class`, range-based `for` and
+  lambdas. Templates, exceptions and multiple inheritance are planned but
+  come after the core works.
+- **Discarded**: C++98/03 only (too limiting for modern code), C-like subset
+  (too small to be useful).
+
+### D-011 — Bundle runs as a program; default target ES5
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: the generated bundle is an executable program: it calls
+  `main()` when loaded. If no target flag is given, the output is ES5.
+- **Reason**: mirrors how a C++ program is built and run; ES5 default is
+  consistent with the project's backward-compatibility goal.
+- **Discarded**: library-style bundle exporting the public API (may be added
+  later behind a flag); ES6 as default.
+
+### D-012 — Private/protected members: obfuscated names
+
+- **Status**: Accepted (owner, 2026-11-12). Implements D-007.
+- **Decision**: private and protected members are renamed to opaque names
+  generated per build and defined as **non-enumerable** properties
+  (`Object.defineProperty`, `enumerable: false`). The mapping from C++ names
+  to obfuscated names exists only at compile time. The same technique is used
+  on both targets.
+- **Reason**: simple, fast, works identically on ES5 and ES6, no per-instance
+  closures and no `WeakMap` requirement. Protected members and `friend`
+  access are resolved at compile time, so derived classes and friends use the
+  obfuscated names directly.
+- **Known limit**: this is obfuscation, not hard privacy. The members do not
+  appear in `for…in`, `Object.keys` or `JSON.stringify` and their names are
+  unpredictable, but they can still be discovered via
+  `Object.getOwnPropertyNames`. Accepted by the owner.
+- **Discarded**: `WeakMap`/closure storage (hybrid), per-instance closures.
+
+### D-013 — Standard library as a separate, tree-shaken, platform-aware bundle
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**:
+  - the C++ standard library is implemented in JavaScript by the project
+    (no third-party code);
+  - when a target is generated, the transpiler also produces a **separate
+    standard library bundle** containing **only the parts actually used** by
+    the program (dead-code elimination at the level of headers, classes and
+    functions);
+  - a flag allows **embedding** that bundle inside the main output instead of
+    emitting it as a separate file;
+  - the library **adapts to the execution context**: browser, Node.js, and
+    mixed environments such as Electron (Node + browser). Context-dependent
+    parts (console/streams, file system, timers, process exit…) are isolated
+    behind a small platform layer.
+- **Reason**: owner requirement; keeps output small and lets several programs
+  share one standard library file.
+- **Open points**: which headers are supported first; whether the platform is
+  chosen by a flag, detected at runtime, or both; how the separate library
+  file is linked to the program (global object, `require`, script order).
+
+### D-014 — `extern "C"` symbols become the bundle's public exports
+
+- **Status**: Accepted (owner, 2026-11-12).
+- **Decision**: functions and variables declared with C linkage
+  (`extern "C" { ... }` or `extern "C" void f();`) are exported from the
+  bundle under their **unmangled** C name:
+  - **Node.js** target: on `exports` (`module.exports`);
+  - **browser** target: on the global object — `globalThis`, falling back to
+    `window` (and `self` in workers) where `globalThis` is not available,
+    since `globalThis` is not part of ES5.
+- **Reason**: owner requirement; `extern "C"` is the natural C++ way to mark
+  a stable, unmangled interface, so it maps cleanly to the JavaScript side.
+  This complements D-011: the bundle still runs `main()`, and additionally
+  exposes its C-linkage API.
+- **Consequences**: `extern "C"` functions cannot be overloaded (as in C++);
+  the semantic phase reports duplicate C-linkage names across translation
+  units. Exported names must be valid JavaScript identifiers.
+- **Open point**: behaviour in mixed contexts (Electron) — export to
+  `exports`, to the global object, or both.
 
 ---
 
@@ -122,7 +200,9 @@ cpp2js/
 │   ├── printer/             # Pretty printer and minifier
 │   ├── sourcemap/           # Source Map v3 builder, VLQ encoder
 │   ├── bundler/             # Combines translation units into one bundle
-│   └── runtime/             # Small JS helpers embedded in the bundle when needed
+│   ├── runtime/             # Small JS helpers embedded in the bundle when needed
+│   └── stdlib/              # C++ standard library in JS, split per header (D-013)
+│       └── platform/        # Context layer: browser, node, mixed (Electron)
 ├── test/                    # Unit tests (no external test framework)
 │   └── fixtures/            # C++ inputs and expected JS outputs
 ├── examples/                # Sample C++ programs
@@ -199,35 +279,25 @@ C++ sources
 
 ## 4. Notes and research
 
-### Candidate techniques for hiding private/protected members (D-007)
+### Techniques considered for hiding private/protected members (D-007)
 
-1. **Closure-scoped storage**: private state stored in a per-class closure
-   keyed by instance; truly unreachable from outside. In ES5 this needs an
-   instance-to-storage association without `WeakMap` (e.g. a hidden key).
-2. **`WeakMap` (ES6 target)**: real privacy, no memory leaks; not available
-   in ES5.
-3. **Mangled, non-enumerable properties**: members renamed to opaque,
-   per-build random names and defined with `Object.defineProperty`
-   (`enumerable: false`). Simple and fast, but only obfuscation: a determined
-   caller can still find them via `Object.getOwnPropertyNames`.
-4. **Hybrid**: technique 2 for ES6, technique 1 or 3 for ES5.
+1. **Closure-scoped storage** keyed by instance: real privacy, needs a hidden
+   instance key in ES5.
+2. **`WeakMap`** (ES6 only): real privacy, no leaks.
+3. **Obfuscated, non-enumerable properties**: chosen (D-012).
+4. **Hybrid** of 2 and 1/3.
 
-Protected members additionally need to be accessible from derived classes
-compiled in the same bundle; `friend` declarations must also be honoured.
+Protected members must stay accessible from derived classes in the same
+bundle; `friend` declarations must be honoured. Both are resolved at compile
+time and simply use the obfuscated names.
 
 ---
 
 ## 5. Open questions (to discuss with the owner)
 
-- Default output target: ES5 or ES6?
-- Supported C++ subset and reference standard (C++98/03, C++11, …):
-  templates, operator overloading, multiple inheritance, exceptions,
-  namespaces, lambdas.
-- Standard library: is "pure C++" without the STL, or should a subset
-  (`<iostream>`, `<string>`, `<vector>`) be provided by a runtime?
 - Semantics of numeric types (32-bit integer wrap-around via `| 0`, 64-bit
   integers, `char`), pointers and references, manual memory management.
-- Program entry point: does the bundle call `main()` automatically, or does
-  it export the public API as a library (CommonJS, global, both)?
-- Technique for protecting private/protected members (section 4).
+- Standard library: first headers to support; platform selection (flag,
+  runtime detection, or both); how the separate library file is linked.
+- Full list and names of CLI flags.
 - Minimum Node.js version supported by the CLI.
