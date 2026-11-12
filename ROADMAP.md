@@ -183,6 +183,6 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-12** — Roadmap created; Phase 0 started (documentation and license).
 - **2026-11-12** — Phase 1: decisions D-010 to D-013 taken; Phases 5, 6, 7 and 10
   extended accordingly (C++11 features, standard library).
+- **2026-11-12** — Decision D-014 (`extern "C"` exports); Phases 6 and 9 extended.
 - **2026-11-12** — Decisions D-015 (platform flags), D-016 (integer semantics),
   D-017 (standard library order).
-- **2026-11-12** — Decision D-014 (`extern "C"` exports); Phases 6 and 9 extended.
