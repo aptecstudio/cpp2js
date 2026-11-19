@@ -15,8 +15,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
-| 1   | Scope definition                        | Done         | 12 / 12  |
-| 2   | Infrastructure (CLI, diagnostics, tests)| Not started  | 0 / 8    |
+| 1   | Scope definition                        | Done         | 13 / 13  |
+| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 4 / 9    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 6    |
 | 5   | Parser and AST                          | Not started  | 0 / 11   |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime and standard library            | Not started  | 0 / 9    |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 21 / 106 items done.**
+**Overall: 26 / 108 items done.**
 
 ---
 
@@ -65,9 +65,10 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] CLI entry point `bin/cpp2js.js` with argument parser (no libraries).
 - [ ] `--help` and `--version`; usage errors and checks of D-021 (exit code 2).
 - [ ] Programmatic API `compile(options)` in `src/index.js`.
-- [ ] Source file abstraction with line/column mapping.
-- [ ] Diagnostics: errors, warnings, notes; compiler-style formatting.
-- [ ] Minimal in-house test runner (`npm test`), no external framework.
+- [x] Source file abstraction with line/column mapping (`src/source/source-file.js`).
+- [x] Diagnostics: errors, warnings, notes; compiler-style formatting (D-023).
+- [x] Minimal in-house test runner (`npm test`), no external framework (D-022).
+- [x] Automatic ES5 check of the project's own sources, run by `npm test` (D-024).
 - [ ] Fixture-based tests (C++ input -> expected JS output).
 - [ ] Continuous integration workflow running the test suite.
 
@@ -191,3 +192,6 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-12** — Phase 0 completed (`package.json`, `.gitignore`, `.editorconfig`,
   source tree). Next: CLI flag design (Phase 1), then Phase 2.
 - **2026-11-12** — Phase 1 completed with D-021 (CLI). Next: Phase 2.
+- **2026-11-19** — Phase 2 started: test runner, source files, diagnostics, ES5 check
+  (D-022 to D-024; new item added; Phase 1 count fixed to 13). Next: CLI argument
+  parser and D-021 checks.

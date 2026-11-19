@@ -305,6 +305,69 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: `-E` (preprocess only) for now; `a.js` as default output;
   `node` as default platform.
 
+### D-022 — In-house test runner
+
+- **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
+- **Decision**: `npm test` runs `test/run.js`, which loads every `*.test.js`
+  under `test/` (except `test/fixtures/`) in sorted order. Test files
+  register cases with `test(name, fn)` from `test/harness.js` and assert with
+  Node's built-in `assert` module. Cases are synchronous; one `ok -` /
+  `not ok -` line is printed per case, then a summary. Exit code 1 on any
+  failure or on a file that cannot be loaded. An optional argument filters
+  cases by the label `file > name`.
+- **Reason**: rule 2 of AGENTS.md forbids external frameworks; a flat
+  `test()` API is enough for a compiler whose phases are synchronous, and
+  runs unchanged on Node 0.10 (D-020).
+- **Discarded**: `describe`/`it` nesting (more code, no current need);
+  asynchronous cases (none of the phases is asynchronous; can be added
+  later if the CLI tests need it).
+
+### D-023 — Diagnostic model and text format
+
+- **Status**: Accepted (agent, 2026-11-19).
+- **Decision**:
+  - `src/source/source-file.js`: `SourceFile(path, text)` maps 0-based
+    offsets (UTF-16 units) to 1-based line/column and back; `\n`, `\r\n`
+    and lone `\r` all end a line;
+  - `src/diagnostics/diagnostic.js`: `Diagnostic(severity, message, span)`
+    with severities `error`, `warning`, `note`; a span is
+    `{source, start, end}` (end exclusive), a whole file (no `start`) or
+    absent; notes are attached with `addNote()`;
+  - `src/diagnostics/diagnostic-bag.js`: `DiagnosticBag` collects and counts
+    diagnostics and applies `-w` (drop warnings) and `-Werror` (promote
+    warnings to errors, shown with a ` [-Werror]` suffix);
+  - `src/diagnostics/format.js`: clang-like text. First line
+    `file:line:col: severity: message` (`file: …` without a position,
+    `cpp2js: …` without a file), then the source line and a marker line
+    with `^` at the start and `~` up to the end of the range, clipped to the
+    first line. Tabs before the column are copied into the marker line so
+    the caret stays aligned. Summary: `N warnings and M errors generated.`
+- **Reason**: the familiar compiler format (section 3.4) is understood by
+  editors and users; copying tabs avoids guessing a tab width.
+- **Discarded**: gcc's `12 | ` gutter (noisier, no benefit at this stage);
+  colored output (may be added later behind a flag, after deciding on TTY
+  detection).
+
+### D-024 — Automatic ES5 check of the project's sources
+
+- **Status**: Accepted (agent, 2026-11-19; proposed to the owner before the
+  task).
+- **Decision**: `test/es5.test.js` scans every `.js` file under `bin/`,
+  `src/` and `test/` (fixtures excluded) with the heuristic scanner in
+  `test/tools/es5-check.js` and fails on ES2015+ constructs: `let`, `const`,
+  `class`, `import`/`export`, arrow functions, template literals, spread,
+  `**`, ES2015+ globals (`Map`, `Set`, `Promise`, `Symbol`, `globalThis`, …),
+  ES2015+ statics (`Object.assign`, `Math.imul`, `Buffer.from`, …) and common
+  ES2015+ string/array methods (`.startsWith()`, `.includes()`, …).
+- **Reason**: development happens on recent Node versions that accept
+  ES2015+ silently; without the check, violations of rule 1 would only
+  appear on old engines.
+- **Limits**: it is a scanner, not a parser: shorthand methods, computed
+  keys and destructuring are not detected, and method names common in
+  user-defined APIs (`find`, `fill`, `keys`) are not checked.
+- **Discarded**: running the suite on Node 0.10 only (not available locally;
+  left to CI); a full ES5 parser (too much code for a test helper).
+
 ---
 
 ## 2. Source tree structure (planned)
@@ -320,8 +383,8 @@ cpp2js/
 ├── src/
 │   ├── index.js             # Programmatic API: compile(options)
 │   ├── cli/                 # Flag parsing, help text, exit codes
-│   ├── diagnostics/         # Error/warning objects, formatting, source excerpts
-│   ├── source/              # Source files, positions, line/column mapping
+│   ├── diagnostics/         # Error/warning objects, formatting, source excerpts (D-023)
+│   ├── source/              # Source files, positions, line/column mapping (D-023)
 │   ├── preprocessor/        # #include, #define, macros, #if/#ifdef, include paths
 │   ├── lexer/               # Tokenizer for preprocessed C++
 │   ├── parser/              # Recursive-descent parser -> AST
@@ -336,6 +399,9 @@ cpp2js/
 │   └── stdlib/              # C++ standard library in JS, split per header (D-013)
 │       └── platform/        # Context layer: browser, node, mixed (Electron)
 ├── test/                    # Unit tests (no external test framework)
+│   ├── run.js               # Test runner (D-022)
+│   ├── harness.js           # test(name, fn) registry
+│   ├── tools/               # Test helpers (es5-check.js, D-024)
 │   └── fixtures/            # C++ inputs and expected JS outputs
 ├── examples/                # Sample C++ programs
 ├── .editorconfig            # Mirrors the conventions of section 3.1
