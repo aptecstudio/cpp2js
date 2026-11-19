@@ -194,8 +194,7 @@ Sema.prototype._declareField = function (spec, declarator, type, bitWidth, recor
   var diag;
   var width = null;
   if (spec.storage === 'static') {
-    this.error('static data members are not supported yet', declarator.range);
-    return null;
+    return this.actOnStaticDataMember(record, spec, declarator, type);
   }
   if (spec.storage && spec.storage !== 'mutable') {
     this.error('storage class specified for a member declaration', declarator.range);
@@ -523,6 +522,14 @@ Sema.prototype._buildMemberExpr = function (object, objType, isArrow, decls, ran
   }
   if (member.kind === 'EnumeratorDecl') {
     return this._expr('DeclRefExpr', range, { decl: member }, member.type, 'prvalue');
+  }
+  if (member.kind === 'VarDecl' && member.isStaticMember) {
+    // `obj.s` names the static member itself.
+    if (!this.checkAccess(member, namingClass, nameRange)) {
+      return null;
+    }
+    return this._expr('DeclRefExpr', range, { decl: member }, T.removeReference(member.type),
+      'lvalue');
   }
   this.error('\'' + member.name + '\' does not refer to a value', nameRange);
   return null;

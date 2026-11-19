@@ -1094,6 +1094,7 @@ Parser.prototype.parseDeclarator = function (abstract) {
   var tok;
   var op;
   var qualified;
+  var savedScope;
   for (;;) {
     tok = this.peek();
     if (this.isPunct('*')) {
@@ -1144,7 +1145,19 @@ Parser.prototype.parseDeclarator = function (abstract) {
     this.fail('expected unqualified-id');
   }
 
-  this._parseDeclaratorSuffixes(declarator, abstract);
+  if (declarator.qualifier && declarator.qualifier.scope && !declarator.nested) {
+    // After a qualified declarator-id, names are looked up in the scope of
+    // the qualifier (C++11 3.4.1/8): `int S::arr[k]`, `void S::f(T x)`.
+    savedScope = this.sema.scope;
+    this.sema.scope = declarator.qualifier.scope;
+    try {
+      this._parseDeclaratorSuffixes(declarator, abstract);
+    } finally {
+      this.sema.scope = savedScope;
+    }
+  } else {
+    this._parseDeclaratorSuffixes(declarator, abstract);
+  }
   declarator.range = declarator.nameToken ? this.rangeOf(declarator.nameToken) :
     this.rangeFrom(first);
   return declarator;
@@ -1434,8 +1447,11 @@ Parser.prototype._parseOutOfLineMember = function (spec, declarator) {
   try {
     type = this.sema.typeFromDeclarator(this.sema.typeFromSpecifiers(spec), declarator);
     if (!T.isFunction(type)) {
-      this.fail('out-of-line definitions of data members are not supported yet',
-        declarator.nameToken);
+      decl = this.sema.actOnStaticMemberDefinition(record, spec, declarator, type);
+      // The initializer is looked up in the scope of the class (9.4.2/2).
+      this.parseInitializer(decl);
+      this.expectPunct(';', 'after declaration');
+      return decl ? [decl] : [];
     }
     decl = this.sema.actOnOutOfLineMethod(spec, declarator, type, record);
     if (!this.isPunct('{')) {

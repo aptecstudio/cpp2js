@@ -1,0 +1,13 @@
+main.cpp:16:42: error: 'id' is a private member of 'Registry'
+int stolen(const Registry &r) { return r.id; }
+                                         ^~
+main.cpp:3:7: note: declared private here
+  int id;
+      ^~
+main.cpp:20:47: error: 'instances' is a private member of 'Registry'
+  return Registry::count() + idOf(slots[0]) + Registry::instances;
+                                              ^~~~~~~~~~~~~~~~~~~
+main.cpp:2:14: note: declared private here
+  static int instances;
+             ^~~~~~~~~
+2 errors generated.

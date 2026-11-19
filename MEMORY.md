@@ -978,6 +978,31 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   `obj + 1` through `operator int`) are not considered; comparison of two
   user-defined sequences through different functions is a tie.
 
+### D-054 — Friends and static members
+
+- **Status**: Accepted (agent, 2026-11-19; part of step 5f approved by the
+  owner).
+- **Decision**: `src/semantic/sema-friend.js`:
+  - `friend class X;` / `friend X;` add X to the class's friends (an
+    undeclared X is declared in the nearest enclosing namespace, not
+    in the class); `friend R f(...)` declares f in the innermost
+    enclosing namespace and makes it a friend; inline friend
+    definitions are parsed with the delayed member bodies, in the scope
+    of the class. Friends pass access checks, also through bases.
+    Friend member functions of other classes are not supported yet;
+  - static data members are `VarDecl`s with `isStaticMember`: declared
+    in the class (not laid out), defined out of line (`int S::n = 0;`,
+    matched by name and type, a single definition), in-class
+    initializers only for const integral/enumeration or constexpr
+    members, usable in constant expressions; not allowed in local
+    classes; `obj.s` and `S::s` name the member itself;
+  - static member functions are called as `S::f()` or `obj.f()` and have
+    no `this`; qualified uses of private static members are checked;
+  - after a qualified declarator-id, the rest of the declarator is
+    looked up in the scope of the qualifier (3.4.1/8): `int S::a[k]`,
+    `void S::f(Nested x)`; local classes print without their function.
+- **Reason**: C++11 11.3 and 9.4.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

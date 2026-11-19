@@ -66,7 +66,7 @@ Parser.prototype.parseClassSpecifier = function (spec) {
   }
   if (this.isPunct('{') || this.isPunct(':')) {
     form = 'definition';
-  } else if (this.isPunct(';') && nameTok) {
+  } else if (this.isPunct(';') && nameTok && !spec.isFriend) {
     form = 'declaration';
   } else if (!nameTok) {
     this.fail('declaration of anonymous ' + keyword.value + ' must be a definition');
@@ -193,7 +193,7 @@ Parser.prototype._parseDelayedBody = function (item) {
   var savedScope = this.sema.scope;
   var self = this;
   this._pos = item.pos;
-  this.sema.scope = item.decl.parent.scope;
+  this.sema.scope = item.scope || item.decl.parent.scope;
   try {
     this.withRecovery(function () {
       self.parseFunctionBody(item.decl);
@@ -246,7 +246,8 @@ Parser.prototype.parseMemberDeclaration = function (record) {
   }
   spec = this.parseDeclSpecifiers();
   if (spec.isFriend) {
-    this.fail('friend declarations are not supported yet');
+    this._parseFriend(record, spec);
+    return;
   }
   if (this.acceptPunct(';')) {
     if (spec.tagDecl) {
@@ -282,6 +283,8 @@ Parser.prototype.parseMemberDeclaration = function (record) {
       this.next();
       this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
         this.rangeOf(this.peek(-1)));
+    } else if ((this.isPunct('=') || this.isPunct('{')) && decl && decl.kind === 'VarDecl') {
+      this._parseStaticMemberInitializer(decl);
     } else if (this.isPunct('=') || this.isPunct('{')) {
       this._parseMemberInitializer(decl);
     }
@@ -568,5 +571,43 @@ Parser.prototype._parseConversionMember = function (record) {
       this.rangeOf(this.peek(-1)));
   }
   this.expectPunct(';', 'after member declaration');
+};
+
+/** `= init` / `{init}` of a static data member declared in the class. */
+Parser.prototype._parseStaticMemberInitializer = function (decl) {
+  var init;
+  var style;
+  if (this.acceptPunct('=')) {
+    style = 'copy';
+    init = this.isPunct('{') ? this.parseBracedInitList() : this.parseAssignmentExpression();
+  } else {
+    style = 'list';
+    init = this.parseBracedInitList();
+  }
+  this.sema.actOnStaticMemberInit(decl, init, style);
+};
+
+/**
+ * `friend class X;`, `friend X;`, `friend R f(...);` or an inline friend
+ * function definition (C++11 11.3).
+ */
+Parser.prototype._parseFriend = function (record, spec) {
+  var declarator;
+  var decl;
+  if (this.acceptPunct(';')) {
+    this.sema.actOnFriendClass(record, spec.namedType || this.sema.types.builtin('int'),
+      spec.range);
+    return;
+  }
+  declarator = this.parseDeclarator(false);
+  decl = this.sema.actOnFriendFunction(record, spec, declarator);
+  if (decl && this.isPunct('{')) {
+    // Defined in the class: parsed with the other delayed bodies, in the
+    // scope of the class (C++11 11.3/7).
+    this._delayedBodies.push({ decl: decl, pos: this._pos, scope: record.scope });
+    this._skipBraces();
+    return;
+  }
+  this.expectPunct(';', 'after friend declaration');
 };
 

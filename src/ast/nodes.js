@@ -27,7 +27,7 @@ var NODE_KINDS = {
   VarDecl: {
     children: ['init'],
     props: ['name', 'type', 'storage', 'isConstexpr', 'isThreadLocal', 'linkage', 'parent',
-      'initStyle']
+      'initStyle', 'previous']
   },
   ParamDecl: { children: ['defaultArg'], props: ['name', 'type', 'index'] },
   FunctionDecl: {

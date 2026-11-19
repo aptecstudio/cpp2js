@@ -132,6 +132,9 @@ Sema.prototype._baseAccessible = function (namingClass, member, range) {
   if (eff.access === 'public') {
     return true;
   }
+  if (this._isFriendOf(eff.access === 'none' ? member.parent : namingClass, contexts)) {
+    return true;
+  }
   for (i = 0; i < contexts.length; i++) {
     if (eff.access === 'none' && (contexts[i] === member.parent ||
         this._isNestedIn(contexts[i], member.parent))) {
@@ -155,6 +158,18 @@ Sema.prototype._baseAccessible = function (namingClass, member, range) {
     ' inheritance here' : 'declared ' + eff.access + ' here', eff.constrainedBy ?
     eff.constrainedBy.range : member.range);
   return false;
+};
+
+/** Whether the current context is a friend of `record`. */
+Sema.prototype._isFriendOf = function (record, contexts) {
+  var fn = this.currentFunction();
+  if (!record.friends) {
+    return false;
+  }
+  if (contexts.some(function (c) { return record.friends.indexOf(c) !== -1; })) {
+    return true;
+  }
+  return !!fn && this._isFriendFunction(record, fn);
 };
 
 /**

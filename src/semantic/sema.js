@@ -795,6 +795,10 @@ Sema.prototype.qualifiedName = function (decl) {
   var parts = [];
   var current = decl;
   while (current && current !== this.globalNamespace) {
+    if (current.kind === 'FunctionDecl') {
+      // Local classes are named without their function, as Clang does.
+      break;
+    }
     parts.unshift(current.name || '(anonymous namespace)');
     current = current.parent;
   }
@@ -1013,3 +1017,4 @@ require('./sema-class');
 require('./sema-special');
 require('./sema-inherit');
 require('./sema-operator');
+require('./sema-friend');

@@ -351,6 +351,11 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
     return this.implicitMemberAccess(result.decls, range, qualifier &&
       qualifier.kind === 'RecordDecl' ? qualifier : null);
   }
+  if (decl.access && decl.parent && decl.parent.kind === 'RecordDecl' &&
+      !this.checkAccess(decl, qualifier && qualifier.kind === 'RecordDecl' ? qualifier :
+        decl.parent, range)) {
+    return null;
+  }
   switch (decl.kind) {
     case 'VarDecl':
     case 'ParamDecl':

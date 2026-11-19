@@ -112,6 +112,9 @@ Evaluator.prototype._evaluate = function (expr) {
           truncate(decl.value, expr.type);
       }
       // A const integral variable initialized with a constant (5.19/2).
+      if (decl.kind === 'VarDecl' && !decl.init && decl.previous && decl.previous.init) {
+        decl = decl.previous;
+      }
       if (decl.kind === 'VarDecl' && (decl.type.isConst || decl.isConstexpr) &&
           (T.isIntegral(decl.type) || T.isEnum(decl.type)) && decl.init) {
         operand = this.evaluate(decl.init.kind === 'InitListExpr' ? decl.init.inits[0] :
