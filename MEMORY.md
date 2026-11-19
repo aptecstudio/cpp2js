@@ -779,6 +779,35 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Not yet**: class types (user-defined conversions, overloaded
   operators, member access), `dynamic_cast`, exceptions, lambdas.
 
+### D-048 — Statements; goto translated with a hybrid technique
+
+- **Status**: Accepted (owner for the goto technique, 2026-11-19; the rest
+  by the agent).
+- **Decision (Phases 5-6)**: `parse-stmt.js` and `sema-stmt.js` implement
+  C++11 clause 6: compound, expression, declaration, `if`/`else`,
+  `switch`/`case`/`default`, `while`, `do`, `for`, `break`, `continue`,
+  `return`, `goto` and labels. Substatements and conditions that declare
+  variables get their own block scope. Checked: contextual conversion of
+  conditions to bool; integral switch conditions, constant and unique
+  case values, a single default; break/continue placement (`target`
+  points to the loop or switch); labels with function scope, undeclared
+  and duplicate labels; **jumps (goto, case, default) that bypass a
+  variable with an initializer or a non-scalar type** (6.7/3).
+  Default-on warnings as in Clang: assignment used as condition, empty
+  body on the same line, non-void function without a return value (in
+  all control paths), except `main`.
+- **Decision (Phase 7, owner)**: `goto` is translated with a **hybrid
+  technique**: functions without goto stay structured code; forward jumps
+  that leave enclosing blocks become `break label` on labeled blocks; only
+  the smallest region that needs it (backward jumps, jumps into blocks or
+  loops) becomes a state machine (`for (;;) switch ($L)` with
+  `continue $dispatch`).
+- **Reason**: readable and fast output for the common cases, support for
+  every goto allowed by C++.
+- **Discarded**: always a state machine for functions with goto (less
+  readable output); only forward gotos (rejects valid C++).
+- **Not yet**: range-based for (C++11 step), exceptions.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

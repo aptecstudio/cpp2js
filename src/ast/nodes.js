@@ -70,10 +70,10 @@ var NODE_KINDS = {
   ForStmt: { children: ['init', 'conditionVar', 'condition', 'increment', 'body'],
     props: [] },
   RangeForStmt: { children: ['variable', 'rangeInit', 'body'], props: ['rangeKind'] },
-  BreakStmt: { children: [], props: [] },
-  ContinueStmt: { children: [], props: [] },
+  BreakStmt: { children: [], props: ['target'] },
+  ContinueStmt: { children: [], props: ['target'] },
   ReturnStmt: { children: ['value'], props: [] },
-  GotoStmt: { children: [], props: ['label'] },
+  GotoStmt: { children: [], props: ['label', 'target'] },
   LabelStmt: { children: ['body'], props: ['name'] },
   JsStmt: { children: ['outputs', 'inputs'], props: ['code'] },
 

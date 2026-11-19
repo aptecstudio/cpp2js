@@ -1,0 +1,22 @@
+main.cpp:7:3: error: cannot jump from switch statement to this case label
+  case 2:
+  ^~~~~~~
+main.cpp:6:9: note: jump bypasses variable initialization
+    int doubled = value * 2;
+        ^~~~~~~
+main.cpp:10:7: warning: using the result of an assignment as a condition without parentheses
+  if (value = 3) {
+      ^~~~~~~~~
+main.cpp:10:7: note: place parentheses around the assignment to silence this warning
+  if (value = 3) {
+      ^~~~~~~~~
+main.cpp:11:5: error: cannot jump from this goto statement to its label
+    goto finish;
+    ^~~~~~~~~~~~
+main.cpp:13:7: note: jump bypasses variable initialization
+  int result = value;
+      ^~~~~~
+main.cpp:23:1: warning: non-void function does not return a value in all control paths
+}
+^
+2 warnings and 2 errors generated.

@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 5 / 13   |
+| 5   | Parser and AST                          | In progress  | 6 / 13   |
 | 6   | Semantic analysis                       | In progress  | 3 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 55 / 124 items done.**
+**Overall: 56 / 124 items done.**
 
 ---
 
@@ -112,7 +112,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   attributes (D-043).
 - [ ] Classes and structs: members, access specifiers, constructors, destructors.
 - [ ] Inheritance (single; multiple if in scope).
-- [ ] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`.
+- [x] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`, `goto` (D-048).
 - [x] Expressions with full C++ precedence and associativity (D-047).
 - [ ] Enumerations (including `enum class`).
 - [ ] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas.
@@ -148,7 +148,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [ ] Private/protected members as obfuscated non-enumerable properties (D-012).
 - [ ] Lambdas -> JavaScript closures (by-value / by-reference captures).
 - [ ] Numeric semantics (integer arithmetic, division, overflow).
-- [ ] Control flow (including `switch` fall-through and `goto` if in scope).
+- [ ] Control flow (including `switch` fall-through and `goto`, hybrid technique of D-048).
 - [ ] ES5 emitter.
 - [ ] ES6 emitter.
 - [ ] Emission of `__js__` as an isolated function with its operands bound (D-026).
@@ -244,3 +244,5 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   JavaScript strings (D-044, supersedes D-037); push at the end of every phase (D-046).
 - **2026-11-19** — Parser step 3: expressions, conversions, overload resolution, constant
   evaluation (D-047).
+- **2026-11-19** — Parser step 4: statements and jump checks; goto will use the hybrid
+  technique (D-048).
