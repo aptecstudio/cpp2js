@@ -11,6 +11,7 @@
 
 var Parser = require('./parser').Parser;
 var TokenKind = require('../lexer/lexer').TokenKind;
+var T = require('../semantic/types');
 
 /** Binary operators by precedence, lowest first (C++11 5.6-5.15). */
 var BINARY_LEVELS = [
@@ -407,6 +408,9 @@ Parser.prototype.parseFunctionalCast = function () {
   if (this.isPunct('{')) {
     args = this.parseBracedInitList();
     range = this.rangeFrom(start);
+    if (T.isRecord(type)) {
+      return this.sema.construct(type.unqualified, args.inits, 'list', range);
+    }
     if (!args.inits.length) {
       return this.sema.actOnValueInit(type, range);
     }

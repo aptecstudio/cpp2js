@@ -870,6 +870,44 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   functions (5d), operators (5e), friends and static members (5f),
   anonymous structs/unions, qualified class names in definitions.
 
+### D-051 — Constructors, destructors and special members
+
+- **Status**: Accepted (agent, 2026-11-19; part of step 5c approved by the
+  owner).
+- **Decision**: `src/semantic/sema-special.js` and the constructor parts of
+  `parse-class.js`:
+  - constructors (`explicit`, delegating), destructors, member
+    initializer lists (fields and delegation; bases in 5d), `= default`,
+    `= delete` (for any function), in-class and out-of-line definitions
+    (`S::S(...) : ... {}`, `S::~S() {}`, also qualified by namespaces);
+  - **implicit special members** declared when a class is complete:
+    default constructor (only without user constructors), copy
+    constructor, copy assignment, move constructor and move assignment
+    (not when the class declares copy operations, move operations or a
+    destructor), destructor; each is deleted when members require it
+    (references, const members, members without the needed operation,
+    user-declared moves for copies);
+  - **every copy of a class object is explicit in the AST**: objects are
+    JavaScript references (D-018), so initializing an object from a
+    glvalue of its class is a `ConstructExpr` with the copy or move
+    constructor (`ConstructorConversion` step), assignment calls the
+    assignment operator (`BinaryExpr '='` with `function`), and
+    prvalues initialize directly (elision). A local returned by value is
+    treated as an rvalue first (implicit move, 12.8/32);
+  - initialization forms: default, direct `S s(a)`, copy `S s = e`
+    (explicit constructors excluded; Clang's "no viable conversion"),
+    list `S s{a}` and copy-list `S s = {a}` (explicit chosen is an
+    error), aggregates through the same entry point; `new S(...)`,
+    functional casts `S(a)`, `S{a}`, `S()`;
+  - constructor errors with Clang's wording: no matching / ambiguous /
+    deleted / implicitly-deleted constructor, private constructor,
+    uninitialized const and reference members.
+- **Reason**: C++11 clause 12 semantics; explicit copies are what the
+  JavaScript object model needs.
+- **Not yet**: base class initializers (5d), user-defined conversions
+  through constructors in function arguments (5e), destructor calls at
+  scope exit (generated in Phase 7).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

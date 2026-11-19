@@ -177,8 +177,7 @@ test('initializes aggregates', function () {
   assert.deepEqual(errorsOf('struct P { int x; };\nP p = {1.5};'),
     ['type \'double\' cannot be narrowed to \'int\' in initializer list']);
   assert.deepEqual(errorsOf('class C { int x; };\nC c = {1};'),
-    ['initialization of non-aggregate type \'C\' with an initializer list requires a ' +
-      'constructor']);
+    ['no matching constructor for initialization of \'C\'']);
   assert.deepEqual(errorsOf('struct F;\nF f;'), ['variable has incomplete type \'F\'']);
 });
 

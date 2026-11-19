@@ -68,8 +68,30 @@ function describe(node) {
       if (node.width !== null && node.width !== undefined) {
         parts.push(':' + node.width);
       }
+      if (node.methodKind === 'constructor' || node.methodKind === 'destructor') {
+        parts.push(node.methodKind);
+      }
+      if (node.isExplicit) {
+        parts.push('explicit');
+      }
+      if (node.isDeleted) {
+        parts.push('deleted');
+      }
+      if (node.isDefaulted && !node.isImplicit) {
+        parts.push('defaulted');
+      }
       if (node.initStyle) {
         parts.push(node.initStyle + '-init');
+      }
+      break;
+    case 'CtorInitializer':
+      parts.push(node.isDelegating ? '<delegating>' : node.member.name);
+      break;
+    case 'ConstructExpr':
+      parts.push(quote(node.type), node.valueCategory, quote(node.constructorDecl.type),
+        node.constructorDecl.isImplicit ? node.constructorDecl.special : 'user');
+      if (node.isListInit) {
+        parts.push('list');
       }
       break;
     case 'NamespaceDecl':

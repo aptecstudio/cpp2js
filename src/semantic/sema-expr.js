@@ -281,6 +281,14 @@ Sema.prototype.checkModifiable = function (expr, range) {
   return true;
 };
 
+/** Element type of (nested) arrays. */
+function innermost(type) {
+  while (T.isArray(type)) {
+    type = type.element;
+  }
+  return type;
+}
+
 /** Variable at the root of a chain of `.` member accesses. */
 function rootVariable(expr) {
   while (expr.kind === 'MemberExpr' && !expr.isArrow && expr.object) {
@@ -738,6 +746,13 @@ Sema.prototype.actOnAssignment = function (left, right, range) {
   if (!left || !right) {
     return null;
   }
+  if (T.isRecord(left.type)) {
+    if (left.valueCategory !== 'lvalue') {
+      this.error('expression is not assignable', range);
+      return null;
+    }
+    return this.assignObject(left, right, range);
+  }
   if (!this.checkModifiable(left, range)) {
     return null;
   }
@@ -1027,6 +1042,9 @@ Sema.prototype.actOnCast = function (kind, type, operand, range) {
     this.error('dynamic_cast is not supported yet', range);
     return null;
   }
+  if (kind === 'functional' && T.isRecord(type)) {
+    return this.construct(type.unqualified, [operand], 'direct', range);
+  }
   if (kind === 'c-style' || kind === 'functional') {
     conversion = this._castConversion('const', type, operand) ||
       this._castConversion('static', type, operand) ||
@@ -1204,6 +1222,9 @@ Sema.prototype._constCast = function (type, operand) {
  * `T()` and `T{}`: a value-initialized prvalue of a scalar type.
  */
 Sema.prototype.actOnValueInit = function (type, range) {
+  if (T.isRecord(type)) {
+    return this.construct(type.unqualified, [], 'direct', range);
+  }
   if (T.isVoid(type)) {
     return this._expr('InitListExpr', range, { inits: [] }, type, 'prvalue');
   }
@@ -1251,6 +1272,19 @@ Sema.prototype.actOnNew = function (allocated, arraySize, args, style, range) {
   if (!T.isComplete(element)) {
     this.error('allocation of incomplete type ' + this.quote(element), range);
     return null;
+  }
+  if (T.isRecord(element)) {
+    if ((arraySize || T.isArray(allocated)) && args && args.length) {
+      this.error('array \'new\' cannot have initialization arguments', range);
+      return null;
+    }
+    init = this.construct(element.unqualified, args || [], args ? (style === 'list' ?
+      'list' : 'direct') : 'default', range);
+    if (!init) {
+      return null;
+    }
+    return this._expr('NewExpr', range, { allocatedType: allocated, arraySize: size,
+      args: [init], initStyle: style }, type, 'prvalue');
   }
   if (args && args.length) {
     if (arraySize || T.isArray(allocated)) {
@@ -1308,13 +1342,13 @@ Sema.prototype.initialize = function (type, init, style, context) {
   if (T.isArray(type)) {
     return this._arrayInit(type, init);
   }
-  if (T.isRecord(type) && init.kind === 'InitListExpr' && style !== 'direct') {
-    if (!this.isAggregate(type.decl)) {
-      this.error('initialization of non-aggregate type ' + this.quote(type) + ' with an ' +
-        'initializer list requires a constructor', init.range);
-      return null;
+  if (T.isRecord(type)) {
+    // Class objects are built by constructors (or aggregate rules).
+    if (init.kind === 'InitListExpr') {
+      return wrap(this.construct(type.unqualified, init.inits, style === 'direct' ? 'direct' :
+        style === 'list' ? 'list' : 'copy-list', init.range), type);
     }
-    return wrap(this.aggregateInit(type.unqualified, init), type);
+    return wrap(this.construct(type.unqualified, [init], 'copy', init.range), type);
   }
   if (init.kind === 'InitListExpr' && style !== 'direct') {
     return wrap(this._scalarListInit(init, type), type);
@@ -1508,7 +1542,14 @@ Sema.prototype.actOnVariableInit = function (decl, init, style) {
     } else if (T.isArray(decl.type) && decl.type.size === null) {
       this.error('definition of variable with array type needs an explicit size or an ' +
         'initializer', decl.range);
-    } else if (decl.type.isConst && !T.isRecord(decl.type)) {
+    } else if (T.isRecord(decl.type) || (T.isArray(decl.type) &&
+        T.isRecord(innermost(decl.type)))) {
+      decl.init = this.defaultConstruct(innermost(decl.type), decl.range);
+      if (decl.init && T.isArray(decl.type)) {
+        // Every element is default-constructed the same way.
+        decl.init.isArrayElement = true;
+      }
+    } else if (decl.type.isConst) {
       this.error('default initialization of an object of const type ' +
         this.quote(decl.type), decl.range);
     } else if (decl.isConstexpr) {
@@ -1556,6 +1597,14 @@ Sema.prototype.actOnReturnStatement = function (value, range, hadValue) {
       this.error('non-void function \'' + fn.name + '\' should return a value', range);
     }
   } else {
+    if (T.isRecord(returnType) && value.kind === 'DeclRefExpr' &&
+        (value.decl.kind === 'ParamDecl' || (value.decl.kind === 'VarDecl' &&
+          !value.decl.storage)) && !T.isReference(value.decl.type) &&
+        value.type.unqualified === returnType.unqualified) {
+      // A local object being returned is treated as an rvalue first
+      // (C++11 12.8/32), so a move constructor is preferred.
+      value = this.implicitCast(value, 'NoOp', value.type, 'xvalue');
+    }
     result = this.initialize(returnType, value, value.kind === 'InitListExpr' ? 'list' :
       'copy', 'return');
     converted = result ? result.init : null;

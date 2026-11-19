@@ -142,6 +142,9 @@ Sema.prototype.resolveOverload = function (candidates, args, range, name) {
     }
     return null;
   }
+  if (!this.checkNotDeleted(best.decl, range)) {
+    return null;
+  }
   return { decl: best.decl, args: this._applyCandidate(best, args, range) };
 };
 
@@ -217,11 +220,23 @@ Sema.prototype.resolveMethodOverload = function (candidates, objType, args, rang
     return null;
   }
   best.conversions = best.conversions.slice(1);
+  if (name !== 'operator=' && !this.checkNotDeleted(best.decl, range)) {
+    return null;
+  }
   return { decl: best.decl, args: this._applyCandidate(best, args, range) };
 };
 
+/** Whether candidate `a` is better than `b` (for constructors). */
+Sema.prototype._candidateBetter = function (a, b) {
+  return isBetter(a, b);
+};
+
 Sema.prototype._callSingle = function (decl, args, range) {
-  var converted = this._convertArguments(decl.type, decl, args, range);
+  var converted;
+  if (!this.checkNotDeleted(decl, range)) {
+    return null;
+  }
+  converted = this._convertArguments(decl.type, decl, args, range);
   return converted ? { decl: decl, args: converted } : null;
 };
 

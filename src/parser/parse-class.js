@@ -11,6 +11,7 @@
 
 var Parser = require('./parser').Parser;
 var TokenKind = require('../lexer/lexer').TokenKind;
+var T = require('../semantic/types');
 
 var ACCESS_WORDS = { 'public': true, 'protected': true, 'private': true };
 
@@ -155,6 +156,10 @@ Parser.prototype.parseMemberDeclaration = function (record) {
   if (this.isKeyword('static_assert') || this.isKeyword('template')) {
     this.fail('\'' + tok.value + '\' in classes is not supported yet');
   }
+  if (this._startsConstructor(record)) {
+    this._parseConstructorMember(record);
+    return;
+  }
   spec = this.parseDeclSpecifiers();
   if (spec.isFriend) {
     this.fail('friend declarations are not supported yet');
@@ -170,6 +175,13 @@ Parser.prototype.parseMemberDeclaration = function (record) {
   for (;;) {
     declarator = this.parseDeclarator(false);
     bitWidth = null;
+    if (this.isPunct(':') && declarator.suffixes.length &&
+        declarator.suffixes[0].kind === 'function' && !declarator.nested) {
+      this.diagnostics.error('only constructors take base initializers',
+        this.rangeOf(this.peek()));
+      this._skipFunctionBody();
+      return;
+    }
     if (this.acceptPunct(':')) {
       bitWidth = this.parseConstantExpression();
     }
@@ -180,7 +192,11 @@ Parser.prototype.parseMemberDeclaration = function (record) {
       this._skipBraces();
       return;
     }
-    if (this.isPunct('=') || this.isPunct('{')) {
+    if (this.isPunct('=') && (this.isKeyword('default', 1) || this.isKeyword('delete', 1))) {
+      this.next();
+      this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
+        this.rangeOf(this.peek(-1)));
+    } else if (this.isPunct('=') || this.isPunct('{')) {
       this._parseMemberInitializer(decl);
     }
     first = false;
@@ -213,3 +229,214 @@ Parser.prototype._parseMemberInitializer = function (decl) {
   }
   this.sema.actOnFieldInit(decl, init, style);
 };
+
+// ---------------------------------------------------------------------------
+// Constructors and destructors (C++11 12.1, 12.4).
+
+var CONSTRUCTOR_SPECIFIERS = { 'explicit': true, 'inline': true, 'constexpr': true,
+  'virtual': true };
+
+/**
+ * Whether a member declaration declares a constructor (`S(...)`) or a
+ * destructor (`~S(...)`) of `record`, after optional specifiers.
+ */
+Parser.prototype._startsConstructor = function (record) {
+  var i = 0;
+  while (this.peek(i).kind === TokenKind.KEYWORD && CONSTRUCTOR_SPECIFIERS[this.peek(i).value]) {
+    i++;
+  }
+  if (this.peek(i).kind === TokenKind.IDENTIFIER && this.peek(i).value === record.name &&
+      this.isPunct('(', i + 1)) {
+    return true;
+  }
+  return this.isPunct('~', i) && this.peek(i + 1).kind === TokenKind.IDENTIFIER &&
+    this.peek(i + 1).value === record.name && this.isPunct('(', i + 2);
+};
+
+/** Reads `explicit`, `inline`, `constexpr`, `virtual` before a constructor. */
+Parser.prototype._parseConstructorSpecifiers = function () {
+  var spec = { builtins: [], namedType: null, storage: '', isExplicit: false, isInline: false,
+    isConstexpr: false, isVirtual: false, range: this.rangeOf(this.peek()) };
+  var tok;
+  while (this.peek().kind === TokenKind.KEYWORD && CONSTRUCTOR_SPECIFIERS[this.peek().value]) {
+    tok = this.next();
+    spec['is' + tok.value.charAt(0).toUpperCase() + tok.value.slice(1)] = true;
+  }
+  return spec;
+};
+
+/** Builds the declarator of a constructor or destructor at the name. */
+Parser.prototype._constructorDeclarator = function () {
+  var isDestructor = !!this.acceptPunct('~');
+  var nameTok = this.next();
+  var declarator = { ptrOps: [], name: nameTok.value, nameToken: nameTok, qualifier: null,
+    nested: null, suffixes: [this.parseFunctionSuffix()], range: this.rangeOf(nameTok) };
+  return { declarator: declarator, kind: isDestructor ? 'destructor' : 'constructor' };
+};
+
+Parser.prototype._parseConstructorMember = function (record) {
+  var spec = this._parseConstructorSpecifiers();
+  var parsed = this._constructorDeclarator();
+  var decl = this.sema.actOnConstructorDeclarator(record, spec, parsed.declarator, parsed.kind);
+  if (this.isPunct('=') && (this.isKeyword('default', 1) || this.isKeyword('delete', 1))) {
+    this.next();
+    this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
+      this.rangeOf(this.peek(-1)));
+    this.expectPunct(';', 'after member declaration');
+    return;
+  }
+  if (this.isPunct(':') || this.isPunct('{')) {
+    if (decl) {
+      this._delayedBodies.push({ decl: decl, pos: this._pos });
+    }
+    this._skipFunctionBody();
+    return;
+  }
+  this.expectPunct(';', 'after member declaration');
+};
+
+/**
+ * Skips an optional ctor-initializer and the function body (both are
+ * parsed later, when the class is complete).
+ */
+Parser.prototype._skipFunctionBody = function () {
+  if (this.acceptPunct(':')) {
+    for (;;) {
+      while (this.peek().kind === TokenKind.IDENTIFIER || this.isPunct('::')) {
+        this.next();
+      }
+      if (this.isPunct('(')) {
+        this.next();
+        this._skipBalanced();
+      } else if (this.isPunct('{')) {
+        this._skipBraces();
+      } else {
+        this.fail('expected \'(\' or \'{\'');
+      }
+      if (!this.acceptPunct(',')) {
+        break;
+      }
+    }
+  }
+  if (!this.isPunct('{')) {
+    this.fail('expected function body after function declarator');
+  }
+  this._skipBraces();
+};
+
+/**
+ * `: mem-initializer, ...` of a constructor definition, parsed in the
+ * scope of the constructor's parameters (C++11 12.6.2).
+ */
+Parser.prototype.parseMemberInitializers = function (ctor) {
+  var colon = this.next();
+  var nameTok;
+  var open;
+  var args;
+  var style;
+  if (ctor.methodKind !== 'constructor') {
+    this.diagnostics.error('only constructors take base initializers', this.rangeOf(colon));
+  }
+  for (;;) {
+    nameTok = this.peek();
+    if (nameTok.kind !== TokenKind.IDENTIFIER) {
+      this.fail('expected class member or base class name');
+    }
+    this.next();
+    if (this.isPunct('{')) {
+      args = this.parseBracedInitList().inits;
+      style = 'list';
+    } else {
+      open = this.expectPunct('(', 'or \'{\' after member initializer name');
+      args = this.isPunct(')') ? [] : this.parseExpressionList();
+      this.expectPunct(')', '', open);
+      style = 'direct';
+    }
+    if (ctor.methodKind === 'constructor' && args.indexOf(null) === -1) {
+      this.sema.actOnMemberInitializer(ctor, nameTok.value, args, style,
+        this.rangeFrom(nameTok));
+    }
+    if (!this.acceptPunct(',')) {
+      break;
+    }
+  }
+};
+
+/**
+ * Out-of-line constructor or destructor definition at namespace scope:
+ * `S::S(int x) : a(x) {}`, `S::~S() {}`, `S::S() = default;`.
+ *
+ * @returns {?Array.<Object>} null if the tokens do not start one.
+ */
+Parser.prototype.parseOutOfLineConstructor = function () {
+  var i = 0;
+  var j;
+  var tok;
+  var info;
+  var qualifier = null;
+  var record = null;
+  var spec;
+  var parsed;
+  var decl;
+  var saved;
+  while (this.peek(i).kind === TokenKind.KEYWORD && CONSTRUCTOR_SPECIFIERS[this.peek(i).value]) {
+    i++;
+  }
+  // Walk `A::B::...::` and stop at `S(` or `~S(` where S names the last
+  // qualifier, a class.
+  for (j = i; ; j += 2) {
+    tok = this.peek(j);
+    if (tok.kind !== TokenKind.IDENTIFIER || !this.isPunct('::', j + 1)) {
+      return null;
+    }
+    info = qualifier ? this.sema.classifyQualifiedName(qualifier, tok.value) :
+      this.sema.classifyName(tok.value);
+    if (info.kind === 'namespace') {
+      qualifier = this.sema.resolveNamespace(info.decls[0]);
+    } else if (info.kind === 'type' && info.type && T.isRecord(info.type)) {
+      qualifier = info.type.decl;
+    } else {
+      return null;
+    }
+    if (qualifier.kind === 'RecordDecl' && ((this.peek(j + 2).value === qualifier.name &&
+        this.peek(j + 2).kind === TokenKind.IDENTIFIER && this.isPunct('(', j + 3)) ||
+        (this.isPunct('~', j + 2) && this.peek(j + 3).value === qualifier.name &&
+          this.isPunct('(', j + 4)))) {
+      record = qualifier;
+      break;
+    }
+  }
+  spec = this._parseConstructorSpecifiers();
+  this._skip(j + 2 - i);
+  parsed = this._constructorDeclarator();
+  saved = this.sema.startClassMemberDefinition(record, null, parsed.declarator.range);
+  if (saved === null) {
+    this._skipDefinitionRest();
+    return [];
+  }
+  try {
+    decl = this.sema.actOnOutOfLineConstructor(record, spec, parsed.declarator, parsed.kind);
+    if (this.isPunct('=') && (this.isKeyword('default', 1) || this.isKeyword('delete', 1))) {
+      this.next();
+      this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
+        this.rangeOf(this.peek(-1)));
+      this.expectPunct(';', 'after declaration');
+      return decl ? [decl] : [];
+    }
+    if (!decl) {
+      this._skipDefinitionRest();
+      return [];
+    }
+    if (!this.isPunct(':') && !this.isPunct('{')) {
+      this.diagnostics.error('out-of-line declaration of a member must be a definition',
+        parsed.declarator.range);
+      this.expectPunct(';', 'after declaration');
+      return [];
+    }
+    this.parseFunctionBody(decl);
+  } finally {
+    this.sema.actOnFinishQualifiedDeclaration(saved);
+  }
+  return [decl];
+};
+

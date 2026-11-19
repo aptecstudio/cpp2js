@@ -91,7 +91,7 @@ var NODE_KINDS = {
     'nameRange', 'type', 'valueCategory'] },
   CallExpr: { children: ['callee', 'args'], props: ['function', 'type', 'valueCategory'] },
   ConstructExpr: { children: ['args'], props: ['constructorDecl', 'type', 'valueCategory',
-    'isListInit'] },
+    'isListInit', 'isArrayElement'] },
   NewExpr: { children: ['arraySize', 'args'], props: ['allocatedType', 'constructorDecl',
     'type', 'valueCategory', 'initStyle'] },
   DeleteExpr: { children: ['operand'], props: ['isArray', 'type', 'valueCategory'] },

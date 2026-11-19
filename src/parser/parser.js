@@ -218,6 +218,23 @@ Parser.prototype._skipBraces = function () {
 };
 
 /**
+ * Runs `fn`; on a ParseError, skips to the next `{` (a function body).
+ */
+Parser.prototype.withRecoveryUntilBrace = function (fn) {
+  try {
+    return fn.call(this);
+  } catch (err) {
+    if (err instanceof ParseError) {
+      while (!this.isPunct('{') && this.peek().kind !== TokenKind.EOF) {
+        this.next();
+      }
+      return null;
+    }
+    throw err;
+  }
+};
+
+/**
  * Runs `fn`; on a ParseError, recovers and returns null.
  */
 Parser.prototype.withRecovery = function (fn) {
@@ -661,7 +678,13 @@ Parser.prototype.parseAliasDeclaration = function () {
  * decl-specifier-seq init-declarator-list ; or a function definition.
  */
 Parser.prototype.parseSimpleDeclaration = function () {
-  var spec = this.parseDeclSpecifiers();
+  var outOfLine = this.sema.scope.kind === 'namespace' ? this.parseOutOfLineConstructor() :
+    null;
+  var spec;
+  if (outOfLine) {
+    return outOfLine;
+  }
+  spec = this.parseDeclSpecifiers();
   var decls = [];
   var declarator;
   var decl;
@@ -735,6 +758,13 @@ Parser.prototype.parseInitializer = function (decl) {
   var style = null;
   var open;
   var args;
+  if (this.isPunct('=') && (this.isKeyword('default', 1) || this.isKeyword('delete', 1)) &&
+      decl && decl.kind === 'FunctionDecl') {
+    this.next();
+    this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
+      this.rangeOf(this.peek(-1)));
+    return;
+  }
   if (this.acceptPunct('=')) {
     style = 'copy';
     init = this.isPunct('{') ? this.parseBracedInitList() : this.parseAssignmentExpression();
@@ -1326,8 +1356,17 @@ Parser.prototype._skipDefinitionRest = function () {
 /** Function body: compound statement (step 1: minimal statements). */
 Parser.prototype.parseFunctionBody = function (decl) {
   var body;
+  var self = this;
   this.sema.actOnStartFunctionBody(decl);
   try {
+    if (this.isPunct(':')) {
+      this.withRecoveryUntilBrace(function () {
+        self.parseMemberInitializers(decl);
+      });
+    }
+    if (decl.methodKind === 'constructor') {
+      this.sema.actOnFinishMemberInitializers(decl);
+    }
     body = this.parseCompoundStatement(false);
   } finally {
     this.sema.actOnFinishFunctionBody(decl, body || null);

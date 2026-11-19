@@ -105,6 +105,7 @@ Sema.prototype.actOnFinishClassBody = function (decl) {
   this._layout(decl);
   decl.complete = true;
   delete decl.access;
+  this.declareImplicitMembers(decl);
 };
 
 // ---------------------------------------------------------------------------
@@ -502,9 +503,10 @@ Sema.prototype._accessContexts = function () {
 /**
  * Checks that `member` is accessible from the current context.
  *
+ * @param {string} [message] Replaces the default error message.
  * @returns {boolean}
  */
-Sema.prototype.checkAccess = function (member, namingClass, range) {
+Sema.prototype.checkAccess = function (member, namingClass, range, message) {
   // `namingClass` matters for access through derived classes (step 5d).
   if (namingClass && namingClass !== member.parent && namingClass.bases &&
       !this._baseAccessible(namingClass, member)) {
@@ -534,8 +536,8 @@ Sema.prototype.checkAccess = function (member, namingClass, range) {
       this._isFriendFunction(owner, this.currentFunction())) {
     return true;
   }
-  diag = this.error('\'' + member.name + '\' is a ' + member.access + ' member of ' +
-    this.quote(this.types.record(owner)), range);
+  diag = this.error(message || '\'' + member.name + '\' is a ' + member.access +
+    ' member of ' + this.quote(this.types.record(owner)), range);
   this.note(diag, 'declared ' + member.access + ' here', member.range);
   return false;
 };
@@ -658,7 +660,8 @@ function callCategoryOf(type) {
  */
 Sema.prototype.startClassMemberDefinition = function (record, name, range) {
   var saved = this.scope;
-  var found = record.scope.lookupLocal(name);
+  // Constructors and destructors (name null) are matched by the caller.
+  var found = name === null ? [null] : record.scope.lookupLocal(name);
   if (!record.complete) {
     this.error('incomplete type ' + this.quote(this.types.record(record)) + ' named in ' +
       'nested name specifier', range);
@@ -782,7 +785,8 @@ function innermostParams(declarator) {
 Sema.prototype.isAggregate = function (record) {
   return !record.members.some(function (m) {
     return (m.kind === 'FieldDecl' && m.access !== 'public') ||
-      (m.kind === 'FunctionDecl' && (m.isVirtual || m.methodKind === 'constructor'));
+      (m.kind === 'FunctionDecl' && (m.isVirtual || (m.methodKind === 'constructor' &&
+        !m.isImplicit)));
   }) && !(record.bases && record.bases.length);
 };
 

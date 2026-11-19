@@ -55,8 +55,9 @@ function lvalueTransformation(sema, expr) {
     return { type: type, steps: [{ castKind: 'FunctionToPointerDecay', type: type,
       valueCategory: 'prvalue' }] };
   }
-  if (expr.valueCategory !== 'prvalue') {
-    type = T.isRecord(type) ? type : type.unqualified;
+  if (expr.valueCategory !== 'prvalue' && !T.isRecord(type)) {
+    // Class objects are copied by a constructor instead (D-051).
+    type = type.unqualified;
     return { type: type, steps: [{ castKind: 'LValueToRValue', type: type,
       valueCategory: 'prvalue' }] };
   }
@@ -187,6 +188,9 @@ function nonReferenceConversion(sema, expr, toType) {
       expr.candidates.length > 1) {
     return overloadedFunctionConversion(sema, expr, target);
   }
+  if (T.isRecord(target) || T.isRecord(expr.type)) {
+    return classConversion(sema, expr, target);
+  }
   transformed = lvalueTransformation(sema, expr);
   step = standardStep(sema, transformed.type, target, isNullPointerConstant(sema, expr));
   if (!step) {
@@ -198,6 +202,25 @@ function nonReferenceConversion(sema, expr, toType) {
   }
   return { kind: 'standard', rank: step.rank, steps: steps, isBoolean: step.isBoolean,
     target: target, reference: null };
+}
+
+/**
+ * Conversions involving class types. A prvalue of the target class is an
+ * identity; a glvalue of it is copied (or moved) by a constructor, still
+ * an exact match (13.3.3.1/6). User-defined conversions come with step 5e.
+ */
+function classConversion(sema, expr, target) {
+  if (T.isRecord(target) && T.isRecord(expr.type) &&
+      expr.type.unqualified === target.unqualified) {
+    if (expr.valueCategory === 'prvalue') {
+      return { kind: 'standard', rank: RANK_EXACT, steps: [], isBoolean: false, target: target,
+        reference: null };
+    }
+    return { kind: 'standard', rank: RANK_EXACT, steps: [{ castKind: 'ConstructorConversion',
+      type: target, valueCategory: 'prvalue' }], isBoolean: false, target: target,
+      reference: null };
+  }
+  return null;
 }
 
 /**
@@ -329,6 +352,13 @@ function applyConversion(sema, expr, conversion) {
     step = conversion.steps[i];
     if (step.castKind === 'SelectOverload') {
       result = sema.selectOverload(result, step.decl);
+      continue;
+    }
+    if (step.castKind === 'ConstructorConversion') {
+      result = sema.copyObject(result, step.type);
+      if (!result) {
+        return null;
+      }
       continue;
     }
     result = sema.implicitCast(result, step.castKind, step.type, step.valueCategory);
