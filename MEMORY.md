@@ -368,6 +368,39 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: running the suite on Node 0.10 only (not available locally;
   left to CI); a full ES5 parser (too much code for a test helper).
 
+### D-025 — JavaScript binding headers: ES5 DOM, ES6 DOM, Node.js
+
+- **Status**: Accepted (owner, 2026-11-19). Design details still open
+  (section 5).
+- **Decision**: besides the C++ standard library, the project provides
+  headers that let C++ code use the JavaScript host APIs directly:
+  - a header for the **DOM as available in ES5** browsers;
+  - a header for the **DOM as available in ES6** browsers (ES2015+ APIs);
+  - a header for the **Node.js** API.
+  They declare C++ types and functions that the transpiler maps onto the
+  corresponding JavaScript objects, instead of implementing them.
+- **Reason**: owner requirement; a program running in a browser or in
+  Node.js must be able to reach its host environment, not only the C++
+  standard library.
+- **Relations**: ties to `--target` (D-021: ES6 DOM requires `es6`) and to
+  `--platform` (D-015: DOM on `browser`/`mixed`, Node.js on `node`/`mixed`);
+  misuse should be a compile-time diagnostic, as for `<fstream>` (D-017).
+
+### D-026 — `__js__`: inline JavaScript, like `__asm__`
+
+- **Status**: Accepted (owner, 2026-11-19). Syntax still open (section 5).
+- **Decision**: the language gains a `__js__` construct, the counterpart of
+  `__asm__`/`asm` in C++ compilers: it embeds JavaScript code verbatim in the
+  generated output, at the point where it appears in the C++ source.
+- **Reason**: owner requirement; as inline assembly gives access to the
+  machine, `__js__` gives access to the JavaScript platform for anything the
+  transpiler or the binding headers (D-025) do not cover.
+- **Notes**: identifiers starting with `__` are reserved to the
+  implementation in C++, so `__js__` cannot clash with user names. The
+  minifier (D-004, phase 8) must not break code inside `__js__`, which is a
+  strong reason to pass C++ values in and out through explicit operands
+  rather than by name.
+
 ---
 
 ## 2. Source tree structure (planned)
@@ -496,4 +529,13 @@ time and simply use the obfuscated names.
 
 ## 5. Open questions (to discuss with the owner)
 
-- None at the moment.
+- **`__js__` syntax (D-026)**: statement only, or also expression? Plain
+  string (`__js__("...")`), raw block, or GCC-style operands
+  (`__js__("..." : outputs : inputs)`) to bind C++ variables? Is the
+  JavaScript checked (parsed, validated against `--target`) or copied
+  blindly?
+- **Binding headers (D-025)**: header names and layout (e.g. `<js/dom5>`,
+  `<js/dom6>`, `<js/node>`); does the ES6 DOM header extend the ES5 one;
+  how JavaScript objects, callbacks and strings are typed on the C++ side;
+  what happens when a header is used with an incompatible target/platform
+  (error or warning).

@@ -15,19 +15,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
-| 1   | Scope definition                        | Done         | 13 / 13  |
+| 1   | Scope definition                        | In progress  | 13 / 15  |
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 4 / 9    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
-| 4   | Lexer                                   | Not started  | 0 / 6    |
-| 5   | Parser and AST                          | Not started  | 0 / 11   |
-| 6   | Semantic analysis                       | Not started  | 0 / 12   |
-| 7   | Lowering and code generation            | Not started  | 0 / 11   |
-| 8   | Printer, minifier, source maps          | Not started  | 0 / 7    |
+| 4   | Lexer                                   | Not started  | 0 / 7    |
+| 5   | Parser and AST                          | Not started  | 0 / 12   |
+| 6   | Semantic analysis                       | Not started  | 0 / 13   |
+| 7   | Lowering and code generation            | Not started  | 0 / 12   |
+| 8   | Printer, minifier, source maps          | Not started  | 0 / 8    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
-| 10  | Runtime and standard library            | Not started  | 0 / 9    |
+| 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 13   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 26 / 108 items done.**
+**Overall: 25 / 119 items done.**
 
 ---
 
@@ -59,6 +59,8 @@ Decisions to take with the owner before writing the compiler core.
 - [x] Full list and names of CLI flags (D-021).
 - [x] Bundle shape — executable program calling `main()` (D-011).
 - [x] Minimum supported Node.js version — 0.10 (D-020).
+- [ ] Design of the `__js__` inline JavaScript construct: syntax, operands, checks (D-026).
+- [ ] Design of the JavaScript binding headers: names, target/platform rules (D-025).
 
 ## Phase 2 — Infrastructure
 
@@ -92,6 +94,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Comments and whitespace handling.
 - [ ] Token positions mapped back to original files.
 - [ ] Lexical error diagnostics.
+- [ ] `__js__` keyword and its raw JavaScript payload (D-026).
 
 ## Phase 5 — Parser and AST
 
@@ -106,6 +109,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas.
 - [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
+- [ ] `__js__` statements/expressions in the AST (D-026).
 
 ## Phase 6 — Semantic analysis
 
@@ -121,6 +125,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] `auto` type deduction and lambda captures.
 - [ ] `extern "C"` linkage: no overloading, duplicate-name checks (D-014).
 - [ ] Semantic diagnostics.
+- [ ] `__js__`: checks of operands and of the JavaScript against the target (D-026).
 
 ## Phase 7 — Lowering and code generation
 
@@ -135,6 +140,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Control flow (including `switch` fall-through and `goto` if in scope).
 - [ ] ES5 emitter.
 - [ ] ES6 emitter.
+- [ ] Emission of `__js__` code with its C++ operands bound (D-026).
 
 ## Phase 8 — Printer, minifier, source maps
 
@@ -145,6 +151,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] External `.map` file output.
 - [ ] Inline source map output.
 - [ ] Source maps tested against known mappings.
+- [ ] Minifier keeps `__js__` code and the names it refers to working (D-026).
 
 ## Phase 9 — Bundler
 
@@ -155,7 +162,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Export `extern "C"` symbols: `exports` on Node.js, global object in the browser (D-014).
 - [ ] Embed only the runtime helpers actually used.
 
-## Phase 10 — Runtime and standard library
+## Phase 10 — Runtime, standard library and JavaScript bindings
 
 - [ ] Integer arithmetic helpers.
 - [ ] Memory model helpers (pointers / references).
@@ -166,6 +173,10 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Separate standard library bundle output.
 - [ ] Flag to embed the standard library bundle in the main output.
 - [ ] Runtime and standard library tests on ES5 and ES6, per platform.
+- [ ] Binding header for the ES5 DOM (D-025).
+- [ ] Binding header for the ES6 DOM (D-025).
+- [ ] Binding header for the Node.js API (D-025).
+- [ ] Diagnostics for binding headers used with an incompatible target or platform (D-025).
 
 ## Phase 11 — Quality, documentation, release
 
@@ -195,3 +206,6 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-19** — Phase 2 started: test runner, source files, diagnostics, ES5 check
   (D-022 to D-024; new item added; Phase 1 count fixed to 13). Next: CLI argument
   parser and D-021 checks.
+- **2026-11-19** — Owner requirements D-025 (JavaScript binding headers: ES5 DOM, ES6 DOM,
+  Node.js) and D-026 (`__js__` inline JavaScript, like `__asm__`); Phase 1 reopened for
+  their design, items added to Phases 4-8 and 10. Overall count corrected to 25 done.
