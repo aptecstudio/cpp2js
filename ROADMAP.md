@@ -16,7 +16,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
 | 1   | Scope definition                        | In progress  | 13 / 15  |
-| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 9    |
+| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 7    |
 | 5   | Parser and AST                          | Not started  | 0 / 12   |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 13   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 28 / 119 items done.**
+**Overall: 28 / 118 items done.**
 
 ---
 
@@ -73,7 +73,8 @@ Decisions to take with the owner before writing the compiler core.
 - [x] Minimal in-house test runner (`npm test`), no external framework (D-022).
 - [x] Automatic ES5 check of the project's own sources, run by `npm test` (D-024).
 - [x] Fixture-based tests (C++ input -> expected JS output) (D-029).
-- [ ] Continuous integration workflow running the test suite.
+- ~~Continuous integration workflow running the test suite.~~ Dropped: no tests on GitHub
+  (D-030).
 
 ## Phase 3 — Preprocessor
 
@@ -212,4 +213,5 @@ Decisions to take with the owner before writing the compiler core.
   their design, items added to Phases 4-8 and 10. Overall count corrected to 25 done.
 - **2026-11-19** — CLI done (D-028: `stdlib.js` default, stdout rule, conflicts, syntax);
   `compile()` started. Next: fixture-based tests, then CI.
-- **2026-11-19** — Fixture-based tests (D-029) with three CLI/pipeline fixtures. Next: CI.
+- **2026-11-19** — Fixture-based tests (D-029) with three CLI/pipeline fixtures.
+- **2026-11-19** — CI item dropped: no tests on GitHub (D-030). Next: open questions.

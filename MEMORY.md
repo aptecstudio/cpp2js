@@ -373,6 +373,18 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   `io.writeFile` (default `fs.writeFileSync`); an output with a null path is
   the bundle on standard output.
 
+### D-030 — No tests or CI on GitHub
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: tests are **never** run on GitHub: no GitHub Actions
+  workflow, no other GitHub-hosted CI, nothing under `.github/workflows/`.
+  The test suite is run locally with `npm test` before every commit
+  (AGENTS.md workflow, step 5).
+- **Reason**: explicit owner requirement.
+- **Consequence**: the Phase 2 item "Continuous integration workflow" is
+  dropped. Compatibility with old Node versions (D-020) must be checked
+  locally if needed.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
