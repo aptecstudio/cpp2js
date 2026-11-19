@@ -13,17 +13,13 @@
 
 var I = require('../util/int64');
 var TokenKind = require('./pp-lexer').TokenKind;
+var literals = require('../lexer/literals');
 
 // Binary operators by precedence, lowest first.
 var BINARY_LEVELS = [
   ['||'], ['&&'], ['|'], ['^'], ['&'], ['==', '!='], ['<', '>', '<=', '>='], ['<<', '>>'],
   ['+', '-'], ['*', '/', '%']
 ];
-
-var SIMPLE_ESCAPES = {
-  'n': 10, 't': 9, 'v': 11, 'b': 8, 'r': 13, 'f': 12, 'a': 7,
-  '\\': 92, '?': 63, '\'': 39, '"': 34
-};
 
 /**
  * Error raised to abort the evaluation after reporting a diagnostic.
@@ -357,128 +353,29 @@ Evaluator.prototype._number = function (tok) {
 };
 
 /**
- * Decodes the characters of a character literal body.
- *
- * @returns {Array.<{code: number, isByte: boolean}>} `isByte` is true for
- *   numeric escapes (`\xff`, `\377`), which give a byte, not a code point.
- */
-Evaluator.prototype._decodeChars = function (body, tok) {
-  var out = [];
-  var i = 0;
-  var ch;
-  var match;
-  var code;
-  while (i < body.length) {
-    ch = body.charAt(i);
-    if (ch !== '\\') {
-      code = body.charCodeAt(i);
-      // Combine a UTF-16 surrogate pair into one code point.
-      if (code >= 0xd800 && code <= 0xdbff && i + 1 < body.length) {
-        code = 0x10000 + ((code - 0xd800) << 10) + (body.charCodeAt(i + 1) - 0xdc00);
-        i++;
-      }
-      out.push({ code: code, isByte: false });
-      i++;
-      continue;
-    }
-    ch = body.charAt(i + 1);
-    if (SIMPLE_ESCAPES.hasOwnProperty(ch)) {
-      out.push({ code: SIMPLE_ESCAPES[ch], isByte: false });
-      i += 2;
-    } else if ((match = /^[0-7]{1,3}/.exec(body.slice(i + 1))) !== null) {
-      out.push({ code: parseInt(match[0], 8), isByte: true });
-      i += 1 + match[0].length;
-    } else if (ch === 'x' && (match = /^[0-9a-fA-F]+/.exec(body.slice(i + 2))) !== null) {
-      code = parseInt(match[0], 16);
-      out.push({ code: match[0].length > 8 ? Infinity : code, isByte: true });
-      i += 2 + match[0].length;
-    } else if ((ch === 'u' && (match = /^[0-9a-fA-F]{4}/.exec(body.slice(i + 2))) !== null) ||
-        (ch === 'U' && (match = /^[0-9a-fA-F]{8}/.exec(body.slice(i + 2))) !== null)) {
-      out.push({ code: parseInt(match[0], 16), isByte: false });
-      i += 2 + match[0].length;
-    } else {
-      this._fail('invalid escape sequence \'\\' + ch + '\'', tok);
-    }
-  }
-  return out;
-};
-
-/**
- * Evaluates a character literal. Plain `char` is signed and 8 bits wide;
- * `wchar_t` is 32 bits signed, `char16_t` and `char32_t` are unsigned
- * (D-033). A plain literal with several characters (or a character outside
- * ASCII, encoded in UTF-8) is an int built from its bytes, as in GCC.
+ * Evaluates a character literal; see `literals.characterValue` for the
+ * types of each kind (D-033).
  */
 Evaluator.prototype._character = function (tok) {
   var match = /^(u|U|L)?'(.*)'([A-Za-z_]\w*)?$/.exec(tok.text);
-  var prefix;
-  var codes;
-  var bytes;
-  var value;
-  var i;
+  var self = this;
+  var failure = null;
+  var result;
   if (!match || match[3]) {
     this._fail('token is not valid in preprocessor expressions', tok);
   }
-  prefix = match[1] || '';
-  codes = this._decodeChars(match[2], tok);
-  if (!codes.length) {
-    this._fail('empty character constant', tok);
-  }
-  if (prefix) {
-    if (codes.length > 1) {
-      this._fail('character constant with more than one character', tok);
+  result = literals.characterValue(match[1] || '', match[2], function (severity, message) {
+    if (severity === 'error') {
+      failure = failure || message;
+    } else {
+      self._warn(message, tok);
     }
-    if (codes[0].code > (prefix === 'u' ? 0xffff : 0xffffffff)) {
-      this._fail('character too large for enclosing character literal type', tok);
-    }
-    if (prefix === 'L') {
-      return makeValue(I.fromNumber(codes[0].code | 0), false);
-    }
-    return makeValue(I.fromNumber(codes[0].code), true);
+  });
+  if (result === null) {
+    this._fail(failure, tok);
   }
-  bytes = [];
-  for (i = 0; i < codes.length; i++) {
-    appendUtf8(bytes, codes[i].code, codes[i].isByte);
-  }
-  for (i = 0; i < bytes.length; i++) {
-    if (bytes[i] > 0xff) {
-      this._fail('character too large for enclosing character literal type', tok);
-    }
-  }
-  if (bytes.length === 1) {
-    // Plain char is signed: '\xff' is -1.
-    value = bytes[0] > 0x7f ? bytes[0] - 0x100 : bytes[0];
-    return makeValue(I.fromNumber(value), false);
-  }
-  if (bytes.length > 4) {
-    this._fail('character constant too long for its type', tok);
-  }
-  this._warn('multi-character character constant', tok);
-  value = 0;
-  for (i = 0; i < bytes.length; i++) {
-    value = ((value << 8) | bytes[i]) | 0;
-  }
-  return makeValue(I.fromNumber(value), false);
+  return makeValue(I.fromNumber(result.value), result.unsigned);
 };
-
-/**
- * Appends the UTF-8 encoding of a code point. Values written with a
- * numeric escape (`\xff`, `\377`) are single bytes, not code points.
- */
-function appendUtf8(bytes, code, isByte) {
-  if (isByte || code < 0x80) {
-    bytes.push(code);
-  } else if (code < 0x800) {
-    bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
-  } else if (code < 0x10000) {
-    bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-  } else if (code <= 0x10ffff) {
-    bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f),
-      0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-  } else {
-    bytes.push(code);
-  }
-}
 
 /**
  * Evaluates a controlling expression.

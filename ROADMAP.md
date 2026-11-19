@@ -18,7 +18,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 1   | Scope definition                        | Done         | 16 / 16  |
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
-| 4   | Lexer                                   | In progress  | 2 / 7    |
+| 4   | Lexer                                   | Done         | 7 / 7    |
 | 5   | Parser and AST                          | Not started  | 0 / 13   |
 | 6   | Semantic analysis                       | Not started  | 0 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 42 / 124 items done.**
+**Overall: 47 / 124 items done.**
 
 ---
 
@@ -91,13 +91,14 @@ Decisions to take with the owner before writing the compiler core.
 
 ## Phase 4 — Lexer
 
-- [ ] Identifiers and keywords.
-- [ ] Integer, floating-point, character and string literals (with escapes).
-- [ ] Operators and punctuators (including `::`, `->*`, `<<=` …).
+- [x] Identifiers and keywords.
+- [x] Integer, floating-point, character and string literals (with escapes) (D-034).
+- [x] Operators and punctuators (including `::`, `->*`, `<<=` …, digraphs, `and`/`or`).
 - [x] Comments and whitespace handling (done by the pp-lexer, D-033).
 - [x] Token positions mapped back to original files (pp-lexer and expansion chain, D-033).
-- [ ] Lexical error diagnostics.
-- [ ] `__js__` keyword and its raw JavaScript payload (D-026).
+- [x] Lexical error diagnostics.
+- [x] `__js__` keyword and its raw JavaScript payload (D-026): a keyword followed by
+  ordinary (possibly raw, concatenated) string literals.
 
 ## Phase 5 — Parser and AST
 
@@ -226,3 +227,5 @@ Decisions to take with the owner before writing the compiler core.
   items added to Phases 5-8 and 10.
 - **2026-11-19** — Phase 3 completed: pp-lexer, 64-bit `#if` arithmetic, Prosser macro
   expansion, includes, `#line` (D-033); two Phase 4 items done by the pp-lexer. Next: Phase 4.
+- **2026-11-19** — Phase 4 completed: lexer, literal decoding, string concatenation (D-034).
+  Next: Phase 5 (parser).

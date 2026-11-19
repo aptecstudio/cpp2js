@@ -111,3 +111,12 @@ test('lexes header names on request', function () {
 test('reports stray characters as other tokens', function () {
   assert.deepEqual(kinds('a @ \\ b'), ['identifier:a', 'other:@', 'other:\\', 'identifier:b']);
 });
+
+test('lexes alternative tokens as operators', function () {
+  var tokens = lex('a and b or not c bitand d xor_eq e compl f').tokens;
+  assert.deepEqual(tokens.map(function (t) { return t.kind + ':' + t.value; }), [
+    'identifier:a', 'punct:&&', 'identifier:b', 'punct:||', 'punct:!', 'identifier:c',
+    'punct:&', 'identifier:d', 'punct:^=', 'identifier:e', 'punct:~', 'identifier:f'
+  ]);
+  assert.equal(tokens[1].text, 'and');
+});

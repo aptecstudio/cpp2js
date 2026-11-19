@@ -44,6 +44,13 @@ var PUNCTUATORS = [
   ['=', '='], ['<', '<'], ['>', '>'], [',', ',']
 ];
 
+// Alternative tokens (C++11 2.6): operators spelled as words. They are
+// operators already for the preprocessor, never identifiers.
+var ALTERNATIVE_TOKENS = {
+  'and': '&&', 'and_eq': '&=', 'bitand': '&', 'bitor': '|', 'compl': '~', 'not': '!',
+  'not_eq': '!=', 'or': '||', 'or_eq': '|=', 'xor': '^', 'xor_eq': '^='
+};
+
 // Encoding prefixes of character and string literals (C++11 2.14.3, 2.14.5).
 var STRING_PREFIXES = ['u8R', 'uR', 'UR', 'LR', 'R', 'u8', 'u', 'U', 'L'];
 var CHAR_PREFIXES = ['u', 'U', 'L'];
@@ -242,8 +249,13 @@ PPLexer.prototype.next = function (inDirective) {
   }
   if (isIdentStart(ch)) {
     this._pos = this._scanIdentifier(start);
-    return this._make(TokenKind.IDENTIFIER, start, this._pos, text.slice(start, this._pos),
+    tok = this._make(TokenKind.IDENTIFIER, start, this._pos, text.slice(start, this._pos),
       space, lineStart);
+    if (ALTERNATIVE_TOKENS.hasOwnProperty(tok.value)) {
+      tok.kind = TokenKind.PUNCT;
+      tok.value = ALTERNATIVE_TOKENS[tok.value];
+    }
+    return tok;
   }
   if (isDigit(ch) || (ch === '.' && isDigit(text.charAt(start + 1)))) {
     this._pos = this._scanNumber(start);

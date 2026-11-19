@@ -484,6 +484,45 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   standard predefined macros; lower-case macro names; doubles for `#if`
   arithmetic (wrong above 2^53).
 
+### D-034 — Lexer and literal representation
+
+- **Status**: Accepted (agent, 2026-11-19; owner chose to proceed with
+  Phase 4).
+- **Decision**:
+  - `src/lexer/lexer.js` converts pp-tokens into C++ tokens of kind
+    `identifier`, `keyword` (the 73 C++11 keywords plus `__js__`),
+    `integer`, `float`, `char`, `string`, `punct`, `eof`. The token list
+    always ends with `eof`;
+  - **alternative tokens** (`and`, `or`, `not`, `bitand`, ...) are turned
+    into operators already by the pp-lexer, as C++11 2.6 requires: they
+    work in `#if` and cannot be macro names;
+  - **integer literals** record `value` (Int64), `radix`, `unsigned`,
+    `longs` (0, 1, 2) and `udSuffix`; their **type is chosen by semantic
+    analysis** (C++11 2.14.2), so the lexer does not depend on the size of
+    `long`. Too large for 64 bits is an error;
+  - **floating literals**: `value` (JS number), `suffix` (`''`, `f`, `l`),
+    `udSuffix`; overflow to infinity is a warning;
+  - **character literals**: value as in D-033 (`literals.characterValue`,
+    shared with `#if`);
+  - **string literals** hold the **code units of their encoding**: UTF-8
+    bytes (no prefix, `u8`), UTF-16 units (`u`), code points (`U`, `L`).
+    Raw strings keep backslashes, their line ends become `\n`. Adjacent
+    literals are concatenated (phase 6): a prefix combines with no prefix,
+    `u8` with no prefix; other mixes are errors, as are differing
+    user-defined suffixes. The run-time representation of strings is
+    decided later;
+  - **extensions**: binary integer literals (C++14), hexadecimal floating
+    literals (C++17); user-defined literal suffixes are lexed, their
+    semantics come later. An unknown escape (`\q`) is a warning that keeps
+    the character (GCC/Clang), also in `#if`;
+  - **diagnostics**: `stray 'x' in program` for `#`, `##` and stray
+    characters; errors in tokens produced by macros point at the outermost
+    invocation, with `expanded from macro 'X'` notes at the spelling.
+- **Reason**: C++11 2.14 semantics; keeping types out of the lexer
+  separates lexical rules from the data model, as Clang does.
+- **Discarded**: typing integer literals in the lexer; decoding strings
+  directly to JavaScript strings (would lose the C++ byte view).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -660,7 +699,7 @@ cpp2js/
 │   ├── diagnostics/         # Error/warning objects, formatting, source excerpts (D-023)
 │   ├── source/              # Source files, positions, line/column mapping (D-023)
 │   ├── preprocessor/        # pp-lexer, expression (#if), preprocessor (D-033)
-│   ├── lexer/               # Tokenizer for preprocessed C++
+│   ├── lexer/               # lexer.js (pp-tokens -> C++ tokens), literals.js (D-034)
 │   ├── parser/              # Recursive-descent parser -> AST
 │   ├── ast/                 # AST node definitions and visitors
 │   ├── semantic/            # Scopes, symbols, name lookup, type checker, access control
@@ -775,6 +814,11 @@ time and simply use the obfuscated names.
 
 To be asked through interactive polls (D-027).
 
+- **Data model (Phase 6)**: size of `long` (32 bits like ILP32/Windows, or
+  64 like LP64), `sizeof` of pointers, `size_t` / `ptrdiff_t`.
+- **Run-time strings (Phases 7 and 10)**: `std::string` and narrow
+  literals as UTF-8 bytes (faithful sizes) or as JavaScript strings
+  (UTF-16, easy interop).
 - Details to settle when the relevant phase starts: how `std::string` and
   JavaScript strings map onto each other in bindings; lifetime of C++
   lambdas passed as `js::function` callbacks; which Node.js core modules get

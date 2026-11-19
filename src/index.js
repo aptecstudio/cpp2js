@@ -3,9 +3,9 @@
 /**
  * Programmatic API of cpp2js.
  *
- * Pipeline status: inputs are loaded and preprocessed (Phase 3); the
- * following phases are not implemented yet, so a successful preprocessing
- * ends with an error saying so. The signature and result shape are the
+ * Pipeline status: inputs are loaded, preprocessed (Phase 3) and lexed
+ * (Phase 4); the following phases are not implemented yet, so a successful
+ * run ends with an error saying so. The signature and result shape are the
  * ones the phases will fill in.
  */
 
@@ -13,6 +13,7 @@ var fs = require('fs');
 var SourceFile = require('./source/source-file');
 var DiagnosticBag = require('./diagnostics/diagnostic-bag');
 var Preprocessor = require('./preprocessor/preprocessor').Preprocessor;
+var Lexer = require('./lexer/lexer').Lexer;
 
 /**
  * Reads a file as UTF-8 text (default `readFile` of `compile`).
@@ -38,7 +39,7 @@ function readFileUtf8(file) {
  * @returns {{success: boolean, diagnostics: DiagnosticBag,
  *   sources: Array.<SourceFile>, units: Array.<{source: SourceFile,
  *   tokens: Array.<Object>}>, files: Array.<{path: ?string, contents: string}>}}
- *   `units` holds the preprocessed tokens of each translation unit.
+ *   `units` holds the C++ tokens of each translation unit.
  *   `files` lists the outputs to write (none with `check`); a null path
  *   means standard output.
  */
@@ -73,7 +74,10 @@ function compile(options) {
       target: options.target,
       platform: options.platform
     }).run(sources[i]);
-    units.push({ source: sources[i], tokens: result.tokens });
+    units.push({
+      source: sources[i],
+      tokens: new Lexer(diagnostics).lex(result.tokens, sources[i])
+    });
   }
 
   if (!diagnostics.hasErrors()) {

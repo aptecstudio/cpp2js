@@ -1,0 +1,13 @@
+main.cpp:4:11: error: invalid digit '8' in octal constant
+  int a = 089;
+          ^~~
+main.cpp:5:12: error: stray '@' in program
+  char c = @;
+           ^
+main.cpp:6:10: error: invalid suffix '.15' on floating constant
+  return PI;
+         ^~
+main.cpp:1:12: note: expanded from macro 'PI'
+#define PI 3.14.15
+           ^~~~~~~
+3 errors generated.

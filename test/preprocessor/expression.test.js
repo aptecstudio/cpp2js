@@ -98,7 +98,8 @@ test('evaluates character literals', function () {
   assert.deepEqual(run('\'ab\'').warnings, ['multi-character character constant']);
   assert.equal(truth('\'\\u00e9\' == 0xc3a9'), true);
   assert.equal(errorOf('\'\''), 'empty character constant');
-  assert.equal(errorOf('\'\\q\''), 'invalid escape sequence \'\\q\'');
+  assert.deepEqual(run('\'\\q\' == 113').warnings, ['unknown escape sequence \'\\q\'']);
+  assert.equal(errorOf('\'\\x\''), '\\x used with no following hex digits');
   assert.equal(errorOf('\'\\777\''), 'character too large for enclosing character literal type');
   assert.equal(errorOf('u\'ab\''), 'character constant with more than one character');
 });
