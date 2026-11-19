@@ -598,6 +598,24 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: structural comparison of non-interned types; Clang's
   separate `QualType` wrapper (more objects to handle in ES5).
 
+### D-040 — AST nodes
+
+- **Status**: Accepted (agent, 2026-11-19).
+- **Decision**: `src/ast/nodes.js`. Nodes are plain objects
+  `{kind, range, ...fields}` created by `createNode(kind, range, fields)`,
+  which fills every field declared for the kind in `NODE_KINDS` and rejects
+  unknown ones. Each kind lists `children` (fields holding nodes or arrays
+  of nodes, visited by `walk`/`childrenOf`) and `props`. Declarations are
+  AST nodes and scope entries at once (D-035); expressions carry `type`
+  and `valueCategory` (`lvalue`, `xvalue`, `prvalue`); implicit
+  conversions are explicit `CastExpr` nodes with `written: false`.
+  `range` is the spelling range in the user's file. Field names never use
+  `kind`, `range` or Object.prototype names (`constructor` -> `constructorDecl`).
+- **Reason**: a data-driven definition keeps the many node kinds
+  consistent and gives traversal for free; plain objects are cheap in ES5.
+- **Discarded**: one constructor function per node kind (much more code,
+  no benefit for traversal).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
