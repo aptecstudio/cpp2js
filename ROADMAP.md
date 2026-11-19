@@ -17,8 +17,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 0   | Project setup                           | Done         | 8 / 8    |
 | 1   | Scope definition                        | Done         | 16 / 16  |
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
-| 3   | Preprocessor                            | Not started  | 0 / 9    |
-| 4   | Lexer                                   | Not started  | 0 / 7    |
+| 3   | Preprocessor                            | Done         | 9 / 9    |
+| 4   | Lexer                                   | In progress  | 2 / 7    |
 | 5   | Parser and AST                          | Not started  | 0 / 13   |
 | 6   | Semantic analysis                       | Not started  | 0 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 31 / 124 items done.**
+**Overall: 42 / 124 items done.**
 
 ---
 
@@ -67,8 +67,8 @@ Decisions to take with the owner before writing the compiler core.
 
 - [x] CLI entry point `bin/cpp2js.js` with argument parser (no libraries) (D-028).
 - [x] `--help` and `--version`; usage errors and checks of D-021 (exit code 2).
-- [~] Programmatic API `compile(options)` in `src/index.js` (loads inputs, CLI writes its
-  outputs; phases and `--verbose` still to do).
+- [~] Programmatic API `compile(options)` in `src/index.js` (loads and preprocesses inputs,
+  CLI writes its outputs; later phases and `--verbose` still to do).
 - [x] Source file abstraction with line/column mapping (`src/source/source-file.js`).
 - [x] Diagnostics: errors, warnings, notes; compiler-style formatting (D-023).
 - [x] Minimal in-house test runner (`npm test`), no external framework (D-022).
@@ -79,23 +79,23 @@ Decisions to take with the owner before writing the compiler core.
 
 ## Phase 3 — Preprocessor
 
-- [ ] `#include "..."` and `#include <...>` with include search paths (`-I`).
-- [ ] Include guards and `#pragma once`.
-- [ ] Object-like macros (`#define`, `#undef`).
-- [ ] Function-like macros, `#` stringizing, `##` token pasting, variadics.
-- [ ] Conditionals: `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`.
-- [ ] Constant expression evaluation and `defined()`.
-- [ ] `#error`, `#warning`, `#line`; predefined macros (`__FILE__`, `__LINE__`, …).
-- [ ] Command-line defines (`-D`, `-U`).
-- [ ] Origin tracking of every token for diagnostics and source maps.
+- [x] `#include "..."` and `#include <...>` with include search paths (`-I`).
+- [x] Include guards and `#pragma once`.
+- [x] Object-like macros (`#define`, `#undef`).
+- [x] Function-like macros, `#` stringizing, `##` token pasting, variadics.
+- [x] Conditionals: `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif`.
+- [x] Constant expression evaluation and `defined()`.
+- [x] `#error`, `#warning`, `#line`; predefined macros (`__FILE__`, `__LINE__`, …).
+- [x] Command-line defines (`-D`, `-U`).
+- [x] Origin tracking of every token for diagnostics and source maps.
 
 ## Phase 4 — Lexer
 
 - [ ] Identifiers and keywords.
 - [ ] Integer, floating-point, character and string literals (with escapes).
 - [ ] Operators and punctuators (including `::`, `->*`, `<<=` …).
-- [ ] Comments and whitespace handling.
-- [ ] Token positions mapped back to original files.
+- [x] Comments and whitespace handling (done by the pp-lexer, D-033).
+- [x] Token positions mapped back to original files (pp-lexer and expansion chain, D-033).
 - [ ] Lexical error diagnostics.
 - [ ] `__js__` keyword and its raw JavaScript payload (D-026).
 
@@ -224,3 +224,5 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-19** — Open questions closed: binding headers (D-025), `__js__` syntax (D-026),
   `extern "JS"` for third-party code (D-031), shared `stdlib.js` (D-032). Phase 1 done again;
   items added to Phases 5-8 and 10.
+- **2026-11-19** — Phase 3 completed: pp-lexer, 64-bit `#if` arithmetic, Prosser macro
+  expansion, includes, `#line` (D-033); two Phase 4 items done by the pp-lexer. Next: Phase 4.

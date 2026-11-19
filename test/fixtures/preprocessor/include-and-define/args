@@ -1,0 +1,5 @@
+main.cpp
+-I
+inc
+-DLEVEL=2
+--check

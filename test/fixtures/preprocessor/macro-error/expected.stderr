@@ -1,0 +1,7 @@
+main.cpp:4:10: error: too many arguments provided to function-like macro invocation
+  return SQUARE(2, 3);
+         ^~~~~~
+main.cpp:1:9: note: macro 'SQUARE' defined here
+#define SQUARE(x) ((x) * (x))
+        ^~~~~~
+1 error generated.

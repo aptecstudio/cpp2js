@@ -1,0 +1,5 @@
+inc/config.h:8:2: warning: #warning config loaded
+#warning config loaded
+ ^~~~~~~
+cpp2js: error: compilation is not implemented yet
+1 warning and 1 error generated.

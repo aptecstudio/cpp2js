@@ -23,6 +23,7 @@
   },
   "files": [
     "bin/",
+    "include/",
     "src/",
     "README.md",
     "LICENSE"

@@ -16,6 +16,8 @@ function SourceFile(path, text) {
   this.path = path;
   this.text = text;
   this._lineStarts = null;
+  // Mappings set by #line, sorted by physical line (see addLineMapping).
+  this._lineMappings = [];
 }
 
 /**
@@ -127,6 +129,55 @@ SourceFile.prototype.getLineText = function (line) {
   }
   end = line < starts.length ? starts[line] : this.text.length;
   return this.text.slice(starts[line - 1], end).replace(/\r?\n$|\r$/, '');
+};
+
+/**
+ * Records a `#line` directive: from `physicalLine` on, lines are presumed
+ * to be numbered from `presumedLine` in the file `presumedPath`.
+ *
+ * @param {number} physicalLine 1-based line following the directive.
+ * @param {number} presumedLine Number given to that line.
+ * @param {?string} presumedPath New file name, or null to keep the current
+ *   presumed name.
+ * @returns {void}
+ */
+SourceFile.prototype.addLineMapping = function (physicalLine, presumedLine, presumedPath) {
+  var previous = this._lineMappings.length ?
+    this._lineMappings[this._lineMappings.length - 1] : null;
+  this._lineMappings.push({
+    physicalLine: physicalLine,
+    presumedLine: presumedLine,
+    presumedPath: presumedPath !== null ? presumedPath :
+      (previous ? previous.presumedPath : this.path)
+  });
+};
+
+/**
+ * Returns the position as presumed after `#line` directives: the file name
+ * and line number that `__FILE__`, `__LINE__` and diagnostics show. The
+ * column is always the physical one.
+ *
+ * @param {number} offset 0-based character offset.
+ * @returns {{path: string, line: number, column: number}}
+ */
+SourceFile.prototype.getPresumedLocation = function (offset) {
+  var pos = this.getPosition(offset);
+  var mapping = null;
+  var i;
+  for (i = this._lineMappings.length - 1; i >= 0; i--) {
+    if (this._lineMappings[i].physicalLine <= pos.line) {
+      mapping = this._lineMappings[i];
+      break;
+    }
+  }
+  if (!mapping) {
+    return { path: this.path, line: pos.line, column: pos.column };
+  }
+  return {
+    path: mapping.presumedPath,
+    line: mapping.presumedLine + (pos.line - mapping.physicalLine),
+    column: pos.column
+  };
 };
 
 module.exports = SourceFile;

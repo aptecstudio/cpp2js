@@ -30,8 +30,8 @@ single, self-contained JavaScript bundle targeting **ES5** or **ES6**.
 
 ## Planned usage
 
-The command-line interface is in place (`cpp2js --help`); the compilation
-phases behind it are not implemented yet.
+The command-line interface (`cpp2js --help`) and the C++11 preprocessor are in
+place; the later compilation phases are not implemented yet.
 
 ```sh
 # Browser bundle (ES5, readable) plus the separate standard library dist/stdlib.js

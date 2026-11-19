@@ -120,7 +120,7 @@ function runFixture(dir) {
     stdout: function (text) { actual.stdout += text; },
     stderr: function (text) { actual.stderr += text; },
     readFile: function (file) {
-      return fs.readFileSync(path.join(dir, file), 'utf8');
+      return fs.readFileSync(path.resolve(dir, file), 'utf8');
     },
     writeFile: function (file, contents) {
       actual.files[file.split(path.sep).join('/')] = contents;

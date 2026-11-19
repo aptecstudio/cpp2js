@@ -23,15 +23,17 @@ var TOOL_NAME = 'cpp2js';
  * @returns {string}
  */
 function formatLocation(diag) {
-  var pos;
+  var loc;
   if (!diag.source) {
     return TOOL_NAME;
   }
   if (diag.start === null) {
     return diag.source.path;
   }
-  pos = diag.source.getPosition(diag.start);
-  return diag.source.path + ':' + pos.line + ':' + pos.column;
+  // The presumed location honours #line directives; the excerpt below
+  // still shows the physical line.
+  loc = diag.source.getPresumedLocation(diag.start);
+  return loc.path + ':' + loc.line + ':' + loc.column;
 }
 
 /**

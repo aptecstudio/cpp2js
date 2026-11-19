@@ -432,6 +432,58 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   in the file; a new flag to change the library file (`--std-out` already
   covers it).
 
+### D-033 — Preprocessor
+
+- **Status**: Accepted (owner for system headers and predefined macros,
+  2026-11-19; the other points by the agent, owner had no preference on
+  extensions).
+- **Decision**:
+  - **architecture**: `src/preprocessor/pp-lexer.js` (phases 1-3: BOM, line
+    splicing reverted inside raw strings, comments, pp-tokens),
+    `expression.js` (`#if` evaluation), `preprocessor.js` (phase 4). Macro
+    expansion uses **Prosser's hide-set algorithm**; the output is a list
+    of pp-tokens for the lexer (Phase 4). Each translation unit gets a
+    fresh macro table;
+  - **tokens** carry `kind`, `text` (spelling), `value` (canonical: digraphs
+    normalized), `source`/`start`/`end` (offsets in the original text),
+    `spaceBefore`, `lineStart`, `hideset` and `expansion: {site, macro}`.
+    Diagnostics on expanded tokens are reported at the outermost
+    invocation (`rootOf`);
+  - **system headers** (`<iostream>`, `<js>`, `<es5>`, `<node/fs>`...) are
+    **real header files** in the package directory `include/` (owner
+    choice), without extension like the standard ones;
+  - **search order**: `"..."`: directory of the including file, then `-I`
+    paths, then `include/`; `<...>`: `-I` paths, then `include/` (as GCC);
+  - **predefined macros** (owner choice): `__cplusplus` = `201103L`,
+    `__STDC_HOSTED__`, `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`;
+    `__CPP2JS__` = major*10000 + minor*100 + patch;
+    `__CPP2JS_TARGET_ES5__` / `_ES6__`; `__CPP2JS_PLATFORM_BROWSER__` /
+    `_NODE__` / `_MIXED__` (value 1). `-D`/`-U` apply after them, in order;
+  - **extensions** (agent choice): `__has_include` (C++17), `#warning`,
+    `__COUNTER__`, binary literals in `#if`, GNU `, ## __VA_ARGS__`,
+    omitting the variadic argument, `defined` produced by a macro
+    expansion (evaluated as GCC/Clang do). Not supported: `#include_next`,
+    `__VA_OPT__`, GNU line markers (`# 12 "file"`), trigraphs (removed in
+    C++17; GCC ignores them by default);
+  - **`#if` arithmetic** in 64-bit intmax_t/uintmax_t via `src/util/int64.js`
+    (no BigInt in ES5). Character literals: plain `char` is **signed
+    8-bit**, `wchar_t` signed 32-bit, `char16_t`/`char32_t` unsigned;
+    multi-character literals and non-ASCII plain literals (UTF-8 bytes)
+    follow GCC, with a warning. Errors in unevaluated operands are not
+    reported;
+  - **diagnostics**: a missing include and `#include` nested more than 200
+    levels are **fatal** for the translation unit (as GCC/Clang);
+    `#error`/`#warning` print `#error <text>`; `#line` changes the presumed
+    location used by `__LINE__`, `__FILE__` and diagnostics
+    (`SourceFile.addLineMapping`). Unknown pragmas are ignored; `#pragma
+    once` and `_Pragma("once")` work; `#pragma once` in the main file
+    warns.
+- **Reason**: faithful C++11 behaviour, checked against the examples of
+  C++11 16.3.5; GCC/Clang behaviour where the standard leaves room.
+- **Discarded**: virtual headers known only to the compiler (owner); only
+  standard predefined macros; lower-case macro names; doubles for `#if`
+  arithmetic (wrong above 2^53).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -607,7 +659,7 @@ cpp2js/
 │   ├── cli/                 # parse-args, validate-options, help, main (D-028)
 │   ├── diagnostics/         # Error/warning objects, formatting, source excerpts (D-023)
 │   ├── source/              # Source files, positions, line/column mapping (D-023)
-│   ├── preprocessor/        # #include, #define, macros, #if/#ifdef, include paths
+│   ├── preprocessor/        # pp-lexer, expression (#if), preprocessor (D-033)
 │   ├── lexer/               # Tokenizer for preprocessed C++
 │   ├── parser/              # Recursive-descent parser -> AST
 │   ├── ast/                 # AST node definitions and visitors
@@ -617,9 +669,11 @@ cpp2js/
 │   ├── printer/             # Pretty printer and minifier
 │   ├── sourcemap/           # Source Map v3 builder, VLQ encoder
 │   ├── bundler/             # Combines translation units into one bundle
+│   ├── util/                # Shared helpers (int64.js: 64-bit arithmetic)
 │   ├── runtime/             # Small JS helpers embedded in the bundle when needed
 │   └── stdlib/              # C++ standard library in JS, split per header (D-013)
 │       └── platform/        # Context layer: browser, node, mixed (Electron)
+├── include/                 # C++ headers shipped with cpp2js (D-033)
 ├── test/                    # Unit tests (no external test framework)
 │   ├── run.js               # Test runner (D-022)
 │   ├── fixtures.test.js     # Fixture runner (D-029)

@@ -3,14 +3,16 @@
 /**
  * Programmatic API of cpp2js.
  *
- * The compilation phases are not implemented yet: `compile()` currently
- * loads the input files and reports that the pipeline is missing. Its
- * signature and result shape are the ones the phases will fill in.
+ * Pipeline status: inputs are loaded and preprocessed (Phase 3); the
+ * following phases are not implemented yet, so a successful preprocessing
+ * ends with an error saying so. The signature and result shape are the
+ * ones the phases will fill in.
  */
 
 var fs = require('fs');
 var SourceFile = require('./source/source-file');
 var DiagnosticBag = require('./diagnostics/diagnostic-bag');
+var Preprocessor = require('./preprocessor/preprocessor').Preprocessor;
 
 /**
  * Reads a file as UTF-8 text (default `readFile` of `compile`).
@@ -31,8 +33,12 @@ function readFileUtf8(file) {
  * @param {function(string): string} [options.readFile] Reads a file;
  *   defaults to `fs.readFileSync` in UTF-8. Lets callers and tests supply
  *   sources without touching the disk.
+ * @param {Array.<string>} [options.systemIncludePaths] Overrides the
+ *   directory of the headers shipped with cpp2js (tests only).
  * @returns {{success: boolean, diagnostics: DiagnosticBag,
- *   sources: Array.<SourceFile>, files: Array.<{path: ?string, contents: string}>}}
+ *   sources: Array.<SourceFile>, units: Array.<{source: SourceFile,
+ *   tokens: Array.<Object>}>, files: Array.<{path: ?string, contents: string}>}}
+ *   `units` holds the preprocessed tokens of each translation unit.
  *   `files` lists the outputs to write (none with `check`); a null path
  *   means standard output.
  */
@@ -43,6 +49,8 @@ function compile(options) {
   });
   var readFile = options.readFile || readFileUtf8;
   var sources = [];
+  var units = [];
+  var result;
   var i;
 
   for (i = 0; i < options.inputs.length; i++) {
@@ -54,6 +62,20 @@ function compile(options) {
     }
   }
 
+  // Each translation unit is preprocessed with a fresh macro table.
+  for (i = 0; i < sources.length; i++) {
+    result = new Preprocessor({
+      diagnostics: diagnostics,
+      readFile: readFile,
+      includePaths: options.includePaths,
+      systemIncludePaths: options.systemIncludePaths,
+      macros: options.macros,
+      target: options.target,
+      platform: options.platform
+    }).run(sources[i]);
+    units.push({ source: sources[i], tokens: result.tokens });
+  }
+
   if (!diagnostics.hasErrors()) {
     diagnostics.error('compilation is not implemented yet');
   }
@@ -62,6 +84,7 @@ function compile(options) {
     success: !diagnostics.hasErrors(),
     diagnostics: diagnostics,
     sources: sources,
+    units: units,
     files: []
   };
 }

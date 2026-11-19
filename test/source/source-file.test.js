@@ -65,3 +65,16 @@ test('returns line text without terminators', function () {
   assert.equal(file.getLineText(5), '');
   assert.throws(function () { file.getLineText(6); }, RangeError);
 });
+
+test('applies #line mappings to presumed locations', function () {
+  var file = new SourceFile('a.cpp', 'l1\nl2\nl3\nl4\nl5\n');
+  assert.deepEqual(file.getPresumedLocation(4), { path: 'a.cpp', line: 2, column: 2 });
+  file.addLineMapping(3, 100, null);
+  file.addLineMapping(5, 7, 'gen.y');
+  assert.deepEqual(file.getPresumedLocation(4), { path: 'a.cpp', line: 2, column: 2 });
+  assert.deepEqual(file.getPresumedLocation(6), { path: 'a.cpp', line: 100, column: 1 });
+  assert.deepEqual(file.getPresumedLocation(9), { path: 'a.cpp', line: 101, column: 1 });
+  assert.deepEqual(file.getPresumedLocation(12), { path: 'gen.y', line: 7, column: 1 });
+  file.addLineMapping(6, 1, null);
+  assert.deepEqual(file.getPresumedLocation(15), { path: 'gen.y', line: 1, column: 1 });
+});

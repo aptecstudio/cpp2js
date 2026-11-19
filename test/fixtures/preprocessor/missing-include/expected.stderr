@@ -1,0 +1,4 @@
+main.cpp:1:10: error: 'config.h' file not found
+#include "config.h"
+         ^~~~~~~~~~
+1 error generated.
