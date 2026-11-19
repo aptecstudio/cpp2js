@@ -20,14 +20,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
 | 5   | Parser and AST                          | Not started  | 0 / 13   |
-| 6   | Semantic analysis                       | Not started  | 0 / 14   |
+| 6   | Semantic analysis                       | In progress  | 1 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 47 / 124 items done.**
+**Overall: 48 / 124 items done.**
 
 ---
 
@@ -123,7 +123,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 
 - [ ] Scopes and symbol tables.
 - [ ] Name lookup (qualified, unqualified, member lookup).
-- [ ] Type representation (fundamental, class, pointer, reference, array, const).
+- [x] Type representation (fundamental, class, pointer, reference, array, const) (D-039).
 - [ ] Type checking of expressions and implicit conversions.
 - [ ] Function overload resolution.
 - [ ] Constructors, destructors and object lifetime rules.
@@ -234,3 +234,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   Next: Phase 5 (parser).
 - **2026-11-19** — Decisions D-035 (parser and semantics interleaved), D-036 (ILP32 data
   model), D-037 (UTF-8 byte strings), D-038 (phase-by-phase strategy).
+- **2026-11-19** — Phase 6 started: type representation (D-039).

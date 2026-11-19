@@ -577,6 +577,27 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: a vertical slice (minimal subset carried to runnable JS
   first, then widened).
 
+### D-039 — Type representation
+
+- **Status**: Accepted (agent, 2026-11-19).
+- **Decision**: `src/semantic/types.js`. A `TypeContext` creates and
+  **interns** every type, so type identity is `===`. Each type carries its
+  cv-qualifiers (`isConst`, `isVolatile`) and `unqualified`; kinds are
+  `builtin` (canonical names such as `'unsigned long long'`,
+  `'std::nullptr_t'`), `pointer`, `lvalue-ref`, `rvalue-ref`, `array`
+  (size or null), `function` (return, adjusted params, variadic, method
+  cv and ref-qualifier), `record` and `enum` (pointing to their
+  declaration, which must have a unique numeric `id`). Built in: reference
+  collapsing, cv on arrays applied to elements, parameter adjustment,
+  decay, ILP32 `sizeOf`, integral promotion, usual arithmetic conversions
+  and Clang-style printing (`const int *`, `int (*)[3]`, `void (int, ...)`)
+  for diagnostics.
+- **Reason**: interning makes type comparison trivial and fast, which
+  overload resolution and conversions need constantly; Clang spelling is
+  what users already know.
+- **Discarded**: structural comparison of non-interned types; Clang's
+  separate `QualType` wrapper (more objects to handle in ES5).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
