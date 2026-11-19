@@ -684,6 +684,10 @@ Parser.prototype.parseSimpleDeclaration = function () {
   if (outOfLine) {
     return outOfLine;
   }
+  if (this._startsQualifiedOperator() && this._conversionAfterOperator()) {
+    // `S::operator T() const { ... }` has no decl-specifiers.
+    return this._parseOutOfLineConversion();
+  }
   spec = this.parseDeclSpecifiers();
   var decls = [];
   var declarator;
@@ -1115,7 +1119,12 @@ Parser.prototype.parseDeclarator = function (abstract) {
   }
 
   tok = this.peek();
-  if (!abstract && this._startsQualifiedName(0)) {
+  if (!abstract && this._startsQualifiedOperator()) {
+    declarator.qualifier = this._parseOperatorQualifier();
+    this._parseOperatorName(declarator);
+  } else if (!abstract && this.isKeyword('operator')) {
+    this._parseOperatorName(declarator);
+  } else if (!abstract && this._startsQualifiedName(0)) {
     qualified = this.parseQualifiedName();
     declarator.name = qualified.name;
     declarator.nameToken = qualified.nameToken;
@@ -1179,6 +1188,100 @@ Parser.prototype._parseDeclaratorSuffixes = function (declarator, abstract) {
       return;
     }
   }
+};
+
+/** Operator tokens that may follow `operator` (C++11 13.5). */
+var OPERATOR_TOKENS = { '+': 1, '-': 1, '*': 1, '/': 1, '%': 1, '^': 1, '&': 1, '|': 1, '~': 1,
+  '!': 1, '=': 1, '<': 1, '>': 1, '+=': 1, '-=': 1, '*=': 1, '/=': 1, '%=': 1, '^=': 1,
+  '&=': 1, '|=': 1, '<<': 1, '>>': 1, '>>=': 1, '<<=': 1, '==': 1, '!=': 1, '<=': 1, '>=': 1,
+  '&&': 1, '||': 1, '++': 1, '--': 1, ',': 1, '->*': 1, '->': 1 };
+
+/** Whether `A::B::operator...` starts here. */
+Parser.prototype._startsQualifiedOperator = function () {
+  var i = this.isPunct('::') ? 1 : 0;
+  if (this.peek(i).kind !== TokenKind.IDENTIFIER) {
+    return false;
+  }
+  while (this.peek(i).kind === TokenKind.IDENTIFIER && this.isPunct('::', i + 1)) {
+    i += 2;
+  }
+  return i > 0 && this.isKeyword('operator', i);
+};
+
+/** Consumes `A::B::` before `operator` and returns the qualifier. */
+Parser.prototype._parseOperatorQualifier = function () {
+  var qualifier = this.acceptPunct('::') ? this.sema.globalNamespace : null;
+  var tok;
+  var info;
+  while (this.peek().kind === TokenKind.IDENTIFIER && this.isPunct('::', 1)) {
+    tok = this.next();
+    this.next();
+    info = qualifier ? this.sema.classifyQualifiedName(qualifier, tok.value) :
+      this.sema.classifyName(tok.value);
+    if (info.kind === 'namespace') {
+      qualifier = this.sema.resolveNamespace(info.decls[0]);
+    } else if (info.kind === 'type' && T.isRecord(info.type)) {
+      qualifier = info.type.decl;
+    } else {
+      this.fail('\'' + tok.value + '\' is not a class, namespace, or enumeration', tok);
+    }
+  }
+  return qualifier;
+};
+
+/**
+ * `operator @`, `operator ()`, `operator []`, `operator new[]` or a
+ * conversion function `operator T` (12.3.2) as a declarator-id.
+ */
+Parser.prototype._parseOperatorName = function (declarator) {
+  var keyword = this.next();
+  var tok = this.peek();
+  var op;
+  var spec;
+  var type;
+  if (tok.kind === TokenKind.PUNCT && tok.value === '(' && this.isPunct(')', 1)) {
+    this.next();
+    this.next();
+    op = '()';
+  } else if (tok.kind === TokenKind.PUNCT && tok.value === '[' && this.isPunct(']', 1)) {
+    this.next();
+    this.next();
+    op = '[]';
+  } else if (tok.kind === TokenKind.PUNCT && OPERATOR_TOKENS[tok.value]) {
+    this.next();
+    op = tok.value;
+  } else if (tok.kind === TokenKind.KEYWORD && (tok.value === 'new' || tok.value === 'delete')) {
+    this.next();
+    op = tok.value;
+    if (this.isPunct('[') && this.isPunct(']', 1)) {
+      this.next();
+      this.next();
+      op += '[]';
+    }
+  } else if (this.startsTypeId(0)) {
+    // conversion-type-id: type specifiers and pointer operators only.
+    spec = this.parseDeclSpecifiers();
+    type = this.sema.typeFromSpecifiers(spec) || this.sema.types.builtin('int');
+    while (this.isPunct('*') || this.isPunct('&') || this.isPunct('&&')) {
+      tok = this.next();
+      type = tok.value === '*' ? this.sema.types.pointer(type) : tok.value === '&' ?
+        this.sema.types.lvalueReference(type) : this.sema.types.rvalueReference(type);
+      while (this.isKeyword('const') || this.isKeyword('volatile')) {
+        tok = this.next();
+        type = this.sema.types.addQualifiers(type, tok.value === 'const',
+          tok.value === 'volatile');
+      }
+    }
+    declarator.conversionType = type;
+    declarator.name = 'operator ' + T.typeToString(type);
+    declarator.nameToken = keyword;
+    return;
+  } else {
+    this.fail('expected a type or an operator after \'operator\'');
+  }
+  declarator.operatorName = op;
+  declarator.name = 'operator' + op;
+  declarator.nameToken = keyword;
 };
 
 /** Whether the token at `offset` can begin a parameter-declaration-clause. */
@@ -1293,6 +1396,27 @@ Parser.prototype.parseTypeId = function () {
   }
   type = this.sema.typeFromDeclarator(this.sema.typeFromSpecifiers(spec), declarator);
   return type || this.sema.types.builtin('int');
+};
+
+/** Whether a type (a conversion function) follows the next `operator`. */
+Parser.prototype._conversionAfterOperator = function () {
+  var i = 0;
+  while (!this.isKeyword('operator', i)) {
+    i++;
+  }
+  return this.startsTypeId(i + 1);
+};
+
+Parser.prototype._parseOutOfLineConversion = function () {
+  var declarator = this.parseDeclarator(false);
+  var spec = { builtins: [], namedType: declarator.conversionType, isConst: false,
+    isVolatile: false, isAuto: false, isTypedef: false, storage: '', isInline: false,
+    isVirtual: false, isExplicit: false, isConstexpr: false, isThreadLocal: false,
+    isFriend: false, range: declarator.range, tagDecl: null };
+  if (!declarator.qualifier || declarator.qualifier.kind !== 'RecordDecl') {
+    this.fail('conversion function must be a non-static member function', declarator.nameToken);
+  }
+  return this._parseOutOfLineMember(spec, declarator);
 };
 
 /**

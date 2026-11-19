@@ -420,6 +420,9 @@ Parser.prototype.parseFunctionalCast = function () {
   args = this.isPunct(')') ? [] : this.parseExpressionList();
   this.expectPunct(')', '', open);
   range = this.rangeFrom(start);
+  if (T.isRecord(type)) {
+    return this.sema.construct(type.unqualified, args, 'direct', range);
+  }
   if (!args.length) {
     return this.sema.actOnValueInit(type, range);
   }

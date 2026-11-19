@@ -240,6 +240,10 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     this._parseConstructorMember(record);
     return;
   }
+  if (this._startsConversionFunction()) {
+    this._parseConversionMember(record);
+    return;
+  }
   spec = this.parseDeclSpecifiers();
   if (spec.isFriend) {
     this.fail('friend declarations are not supported yet');
@@ -522,5 +526,47 @@ Parser.prototype.parseOutOfLineConstructor = function () {
     this.sema.actOnFinishQualifiedDeclaration(saved);
   }
   return [decl];
+};
+
+/** `[explicit|inline|virtual] operator T (` without a return type. */
+Parser.prototype._startsConversionFunction = function () {
+  var i = 0;
+  while (this.peek(i).kind === TokenKind.KEYWORD && CONSTRUCTOR_SPECIFIERS[this.peek(i).value]) {
+    i++;
+  }
+  return this.isKeyword('operator', i) && this.startsTypeId(i + 1);
+};
+
+/** A conversion function member: `explicit operator bool() const;` */
+Parser.prototype._parseConversionMember = function (record) {
+  var spec = this._parseConstructorSpecifiers();
+  var declarator = { ptrOps: [], name: null, nameToken: null, qualifier: null, nested: null,
+    suffixes: [], range: null };
+  var decl;
+  var virt;
+  this._parseOperatorName(declarator);
+  declarator.suffixes.push(this.parseFunctionSuffix());
+  declarator.range = this.rangeOf(declarator.nameToken);
+  spec.namedType = declarator.conversionType;
+  spec.isConst = false;
+  spec.isVolatile = false;
+  spec.isAuto = false;
+  spec.isTypedef = false;
+  virt = this._parseVirtSpecifiers();
+  decl = this.sema.actOnMemberDeclarator(spec, declarator, null, virt);
+  if (decl && spec.isExplicit) {
+    decl.isExplicit = true;
+  }
+  if (decl && this.isPunct('{')) {
+    this._delayedBodies.push({ decl: decl, pos: this._pos });
+    this._skipBraces();
+    return;
+  }
+  if (this.isPunct('=') && (this.isKeyword('default', 1) || this.isKeyword('delete', 1))) {
+    this.next();
+    this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
+      this.rangeOf(this.peek(-1)));
+  }
+  this.expectPunct(';', 'after member declaration');
 };
 

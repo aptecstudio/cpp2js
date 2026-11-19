@@ -357,6 +357,7 @@ Sema.prototype.evaluateArraySize = function (expr) {
  * @returns {?Object} The declaration.
  */
 Sema.prototype.actOnDeclarator = function (spec, declarator) {
+  var decl;
   var base = this.typeFromSpecifiers(spec);
   var type = this.typeFromDeclarator(base, declarator);
   if (!declarator.name) {
@@ -367,7 +368,15 @@ Sema.prototype.actOnDeclarator = function (spec, declarator) {
     return this.declareTypedef(declarator.name, type, declarator.range, false);
   }
   if (T.isFunction(type)) {
-    return this.declareFunction(spec, declarator, type);
+    decl = this.declareFunction(spec, declarator, type);
+    if (declarator.operatorName) {
+      this.checkOperatorDeclaration(decl, declarator.operatorName, false);
+    }
+    if (declarator.conversionType) {
+      this.error('conversion function must be a non-static member function',
+        declarator.range);
+    }
+    return decl;
   }
   return this.declareVariable(spec, declarator, type);
 };
@@ -1003,3 +1012,4 @@ require('./sema-tag');
 require('./sema-class');
 require('./sema-special');
 require('./sema-inherit');
+require('./sema-operator');

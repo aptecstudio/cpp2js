@@ -943,6 +943,41 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded for now**: multiple inheritance, virtual bases,
   `dynamic_cast` (planned after the core, D-010).
 
+### D-053 — Overloaded operators and user-defined conversions
+
+- **Status**: Accepted (agent, 2026-11-19; part of step 5e approved by the
+  owner).
+- **Decision**: `src/semantic/sema-operator.js` with parser support for
+  `operator@` names (also qualified, `S::operator+`) and conversion
+  functions (`operator T()`, `explicit operator bool()`, also out of
+  line):
+  - an operator with a class or enumeration operand looks for
+    `operator@` as a member of the left operand's class and as a
+    non-member through ordinary lookup **plus the namespaces of the
+    operands' classes** (simplified ADL, 3.4.2); member candidates take
+    the implicit object argument; the best viable candidate is called
+    (`CallExpr` with `overloadedOperator`). With no viable user operator
+    the built-in rules apply (built-in candidates are not mixed into
+    the overload set);
+  - covered: all binary and unary operators, compound assignments,
+    prefix and postfix `++`/`--` (dummy `int`), `[]`, `()` (function
+    objects), `->` (applied until a pointer results); class `=` uses the
+    assignment operators (D-051); `&` and `,` are always built-in;
+  - declarations are checked: arity, member-only operators (`=`, `()`,
+    `[]`, `->`), a class or enumeration parameter for non-members, the
+    `int` of postfix forms; `new`/`delete` overloads are not supported;
+  - **user-defined conversions** (13.3.3.1.2): a non-explicit
+    converting constructor of the target or a conversion function of the
+    source (or its bases), followed by a standard conversion; ranked
+    below standard conversions and above `...`; at most one per
+    sequence; `explicit` ones only in direct and contextual contexts
+    (`explicit operator bool` works in conditions and `!`, `&&`, `||`).
+- **Reason**: C++11 13.3.1.2 and 12.3 with Clang-compatible results for
+  common code.
+- **Limits**: built-in candidates with converted class operands (e.g.
+  `obj + 1` through `operator int`) are not considered; comparison of two
+  user-defined sequences through different functions is a tie.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

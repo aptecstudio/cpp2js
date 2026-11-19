@@ -214,8 +214,17 @@ Sema.prototype._checkLiteralConversion = function (expr, type) {
  * Contextual conversion to bool (conditions, `!`, `&&`, `||`, `?:`).
  */
 Sema.prototype.contextualBool = function (expr) {
-  var operand = this.rvalue(expr);
+  var operand;
   var t;
+  var user;
+  if (expr && T.isRecord(expr.type)) {
+    // `explicit operator bool()` counts in contextual conversions.
+    user = this.userConversion(expr, this.types.builtin('bool'), true);
+    if (user) {
+      return conv.applyConversion(this, expr, user);
+    }
+  }
+  operand = this.rvalue(expr);
   if (!operand) {
     return null;
   }
@@ -373,8 +382,15 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
 Sema.prototype.actOnUnaryOperator = function (op, operand, range) {
   var o;
   var t;
+  var overloaded;
   if (!operand) {
     return null;
+  }
+  if (op !== '&') {
+    overloaded = this.tryOverloadedOperator(op, [operand], range);
+    if (overloaded !== undefined) {
+      return overloaded;
+    }
   }
   switch (op) {
     case '&':
@@ -471,7 +487,17 @@ Sema.prototype._incrementDecrement = function (op, operand, postfix, range) {
 };
 
 Sema.prototype.actOnPostfixIncDec = function (op, operand, range) {
-  return operand ? this._incrementDecrement(op, operand, true, range) : null;
+  var overloaded;
+  if (!operand) {
+    return null;
+  }
+  // `x++` calls `operator++(int)` with a dummy 0 (13.5.7).
+  overloaded = this.tryOverloadedOperator(op, [operand, this._expr('IntegerLiteral', range,
+    { value: I.ZERO }, this.types.builtin('int'), 'prvalue')], range);
+  if (overloaded !== undefined) {
+    return overloaded;
+  }
+  return this._incrementDecrement(op, operand, true, range);
 };
 
 /** `sizeof(type)`, `sizeof expr`, `alignof(type)` (C++11 5.3.3, 5.3.6). */
@@ -554,8 +580,16 @@ Sema.prototype._arithmeticOperands = function (left, right) {
  * @returns {?Object}
  */
 Sema.prototype.actOnBinaryOperator = function (op, left, right, range) {
+  var overloaded;
   if (!left || !right) {
     return null;
+  }
+  // `=` on classes goes through assignObject; `,` is never overloaded here.
+  if (op !== '=' && op !== ',') {
+    overloaded = this.tryOverloadedOperator(op, [left, right], range);
+    if (overloaded !== undefined) {
+      return overloaded;
+    }
   }
   if (op === '=') {
     return this.actOnAssignment(left, right, range);
@@ -856,9 +890,19 @@ Sema.prototype._conditional = function (c, then, otherwise, type, category, rang
 // Postfix: subscript and calls.
 
 Sema.prototype.actOnSubscript = function (base, index, range) {
-  var b = this.rvalue(base);
-  var i = this.rvalue(index);
+  var b;
+  var i;
   var tmp;
+  var overloaded;
+  if (!base || !index) {
+    return null;
+  }
+  overloaded = this.tryOverloadedOperator('[]', [base, index], range);
+  if (overloaded !== undefined) {
+    return overloaded;
+  }
+  b = this.rvalue(base);
+  i = this.rvalue(index);
   if (!b || !i) {
     return null;
   }
@@ -920,6 +964,16 @@ Sema.prototype.actOnCall = function (callee, args, range) {
   }
   if (callee.kind === 'MemberExpr' && callee.candidates) {
     return this.actOnMemberCall(callee, args, range);
+  }
+  if (T.isRecord(T.removeReference(callee.type))) {
+    // A function object: `f(args)` calls `f.operator()(args)`.
+    target = this.tryOverloadedOperator('()', [callee].concat(args), range);
+    if (target === undefined) {
+      this.error('type ' + this.quote(callee.type) + ' does not provide a call operator',
+        callee.range);
+      return null;
+    }
+    return target;
   }
   if (callee.kind === 'DeclRefExpr' && callee.candidates) {
     target = this.resolveOverload(callee.candidates, args, range, callee.decl.name);

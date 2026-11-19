@@ -134,6 +134,10 @@ Sema.prototype.actOnMemberDeclarator = function (spec, declarator, bitWidth, vir
     this.error('declaration does not declare anything', declarator.range || spec.range);
     return null;
   }
+  if (spec.isExplicit && !declarator.conversionType) {
+    this.error('\'explicit\' can only be applied to a constructor or conversion function',
+      declarator.range);
+  }
   if (declarator.name === record.name && !T.isFunction(type)) {
     this.error('member \'' + declarator.name + '\' has the same name as its class',
       declarator.range);
@@ -163,6 +167,12 @@ Sema.prototype.actOnMemberDeclarator = function (spec, declarator, bitWidth, vir
       decl.isVirtual = false;
     }
     this.checkOverrides(decl, record, virt || {});
+    if (declarator.operatorName) {
+      this.checkOperatorDeclaration(decl, declarator.operatorName, true);
+    }
+    if (declarator.conversionType) {
+      this.checkConversionFunction(decl, declarator.conversionType);
+    }
     if (decl.isStatic && (type.methodConst || type.methodVolatile)) {
       this.error('static member function cannot have \'const\' qualifier', declarator.range);
     }
@@ -378,6 +388,13 @@ Sema.prototype.actOnMemberAccess = function (object, name, isArrow, range, nameR
   if (!object) {
     return null;
   }
+  if (isArrow && T.isRecord(T.removeReference(object.type))) {
+    // `p->m` on a class calls `operator->()` until it yields a pointer.
+    object = this._overloadedArrow(object, range);
+    if (!object) {
+      return null;
+    }
+  }
   if (isArrow) {
     object = this.rvalue(object);
     if (!object) {
@@ -432,6 +449,24 @@ Sema.prototype._convertObjectToBase = function (object, isArrow, base, range) {
     return false;
   }
   return true;
+};
+
+Sema.prototype._overloadedArrow = function (object, range) {
+  var depth = 0;
+  var result = object;
+  while (T.isRecord(T.removeReference(result.type)) && depth < 32) {
+    result = this.tryOverloadedOperator('->', [result], range);
+    if (result === undefined) {
+      this.error('member reference type ' + this.quote(object.type) + ' is not a pointer',
+        object.range);
+      return null;
+    }
+    if (!result) {
+      return null;
+    }
+    depth++;
+  }
+  return result;
 };
 
 Sema.prototype._isBeingDefined = function (record) {
@@ -786,6 +821,10 @@ Sema.prototype.actOnOutOfLineMethod = function (spec, declarator, type, record) 
     access: match.access
   });
   decl.params = this._createParams(innermostParams(declarator));
+  decl.methodKind = match.methodKind;
+  decl.conversionType = match.conversionType;
+  decl.overloadedOperator = match.overloadedOperator;
+  decl.isExplicit = match.isExplicit;
   this._mergeDefaultArguments(decl, match);
   record.scope.declare(declarator.name, decl);
   return decl;

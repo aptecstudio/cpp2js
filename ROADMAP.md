@@ -20,14 +20,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
 | 5   | Parser and AST                          | In progress  | 9 / 13   |
-| 6   | Semantic analysis                       | In progress  | 5 / 14   |
+| 6   | Semantic analysis                       | In progress  | 7 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 61 / 124 items done.**
+**Overall: 63 / 124 items done.**
 
 ---
 
@@ -126,8 +126,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Scopes and symbol tables (D-041).
 - [x] Name lookup (qualified, unqualified, member lookup) (D-041).
 - [x] Type representation (fundamental, class, pointer, reference, array, const) (D-039).
-- [~] Type checking of expressions and implicit conversions (D-047; class types pending).
-- [~] Function overload resolution (D-047; user-defined conversions pending).
+- [x] Type checking of expressions and implicit conversions (D-047, D-053).
+- [x] Function overload resolution (D-047; user-defined conversions D-053).
 - [x] Constructors, destructors and object lifetime rules (D-051; destructor calls are
   emitted in Phase 7).
 - [~] Access control: `public` / `protected` / `private` (D-050; inheritance and friends
@@ -252,3 +252,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Parser step 5b: classes, members, this, access, layout (D-050).
 - **2026-11-19** — Parser step 5c: constructors, destructors, special members (D-051).
 - **2026-11-19** — Parser step 5d: inheritance, virtual functions, abstract classes (D-052).
+- **2026-11-19** — Parser step 5e: overloaded operators, user-defined conversions (D-053).

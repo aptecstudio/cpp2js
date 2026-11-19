@@ -235,7 +235,7 @@ function classConversion(sema, expr, target) {
       type: target, valueCategory: 'prvalue' }], isBoolean: false, target: target,
       reference: null };
   }
-  return null;
+  return sema.userConversion(expr, target, false);
 }
 
 /**
@@ -336,6 +336,13 @@ function referenceConversion(sema, expr, refType, failure) {
   }
   // Bind to a temporary initialized by copy-initialization.
   inner = nonReferenceConversion(sema, expr, referee.unqualified);
+  if (inner && inner.kind === 'user') {
+    inner.steps[0].toType = refType;
+    inner.target = refType;
+    inner.reference = { lvalueRef: isLvalueRef, rvalueBinding: true, temporary: true,
+      referee: referee };
+    return inner;
+  }
   if (!inner) {
     return null;
   }
@@ -382,6 +389,13 @@ function applyConversion(sema, expr, conversion) {
       result = sema.selectOverload(result, step.decl);
       continue;
     }
+    if (step.castKind === 'UserDefinedConversion') {
+      result = sema.applyUserConversion(result, step);
+      if (!result) {
+        return null;
+      }
+      continue;
+    }
     if (step.castKind === 'ConstructorConversion') {
       result = sema.copyObject(result, step.type);
       if (!result) {
@@ -415,6 +429,11 @@ function compareConversions(a, b) {
   }
   if (a.rank !== b.rank) {
     return a.rank < b.rank ? -1 : 1;
+  }
+  if (a.kind === 'user' || b.kind === 'user') {
+    // Two user-defined sequences are compared by their second standard
+    // conversion only when they use the same function (13.3.3.2/3).
+    return 0;
   }
   // A conversion that is not to bool beats one to bool (13.3.3.2/4).
   if (a.isBoolean !== b.isBoolean) {

@@ -162,6 +162,9 @@ function describe(node) {
       }
       break;
     case 'CallExpr':
+      if (node.overloadedOperator) {
+        parts.push('operator' + node.overloadedOperator);
+      }
       parts.push(quote(node.type), node.valueCategory);
       if (node.isVirtualCall) {
         parts.push('virtual');

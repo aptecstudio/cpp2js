@@ -1,0 +1,10 @@
+main.cpp:23:14: error: cannot initialize a variable of type 'bool' with an lvalue of type 'money::Amount'
+  bool any = total;
+             ^~~~~
+main.cpp:24:8: error: cannot initialize a parameter of type 'Meters' with an rvalue of type 'double'
+  walk(3.5);
+       ^~~
+main.cpp:25:10: error: invalid operands to binary expression ('long' and 'money::Amount')
+  return total.value() - a;
+         ^~~~~~~~~~~~~~~~~
+3 errors generated.
