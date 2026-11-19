@@ -401,6 +401,22 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   strong reason to pass C++ values in and out through explicit operands
   rather than by name.
 
+### D-027 — Every question to the owner goes through an interactive poll
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: agents ask **every** question or doubt addressed to the owner
+  through the interactive multiple-choice tool (poll) of the tooling, never as
+  plain text in the chat. This covers design choices, ambiguities,
+  confirmations ("shall I proceed?") and the choice of the next task. Each
+  poll states the context briefly, offers concrete options with their
+  trade-offs and marks the recommended one; the owner can always answer
+  with free text.
+- **Reason**: owner requirement; it makes decisions quick to take and easy to
+  trace. It strengthens step 3 of the AGENTS.md workflow ("whenever the
+  tooling allows it") into a rule for any question.
+- **Fallback**: only if the tooling has no interactive tool, the question is
+  asked in text with numbered options.
+
 ---
 
 ## 2. Source tree structure (planned)
@@ -528,6 +544,8 @@ time and simply use the obfuscated names.
 ---
 
 ## 5. Open questions (to discuss with the owner)
+
+To be asked through interactive polls (D-027).
 
 - **`__js__` syntax (D-026)**: statement only, or also expression? Plain
   string (`__js__("...")`), raw block, or GCC-style operands
