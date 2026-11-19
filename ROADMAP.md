@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 6 / 13   |
+| 5   | Parser and AST                          | In progress  | 7 / 13   |
 | 6   | Semantic analysis                       | In progress  | 3 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 56 / 124 items done.**
+**Overall: 57 / 124 items done.**
 
 ---
 
@@ -114,7 +114,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [ ] Inheritance (single; multiple if in scope).
 - [x] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`, `goto` (D-048).
 - [x] Expressions with full C++ precedence and associativity (D-047).
-- [ ] Enumerations (including `enum class`).
+- [x] Enumerations (including `enum class`) (D-049).
 - [ ] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas.
 - [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
@@ -246,3 +246,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   evaluation (D-047).
 - **2026-11-19** — Parser step 4: statements and jump checks; goto will use the hybrid
   technique (D-048).
+- **2026-11-19** — Parser step 5a: enumerations (D-049).

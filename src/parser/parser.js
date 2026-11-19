@@ -667,6 +667,9 @@ Parser.prototype.parseSimpleDeclaration = function () {
   var decl;
   var saved;
   if (this.acceptPunct(';')) {
+    if (spec.tagDecl) {
+      return [spec.tagDecl];
+    }
     this.diagnostics.warning('declaration does not declare anything', spec.range);
     return [];
   }
@@ -777,7 +780,7 @@ Parser.prototype.parseDeclSpecifiers = function () {
   var spec = {
     builtins: [], namedType: null, isConst: false, isVolatile: false, isAuto: false,
     isTypedef: false, storage: '', isInline: false, isVirtual: false, isExplicit: false,
-    isConstexpr: false, isThreadLocal: false, isFriend: false, range: null
+    isConstexpr: false, isThreadLocal: false, isFriend: false, range: null, tagDecl: null
   };
   var first = this.peek();
   var tok;
@@ -825,6 +828,10 @@ Parser.prototype.parseDeclSpecifiers = function () {
         spec.isConstexpr = true;
       } else if (tok.value === 'friend') {
         spec.isFriend = true;
+      } else if (tok.value === 'enum' && !hasType) {
+        spec.namedType = this.parseEnumSpecifier(spec);
+        hasType = true;
+        continue;
       } else {
         break;
       }
@@ -871,6 +878,130 @@ Parser.prototype._typeSpelling = function (spec) {
   return spec.namedType ? T.typeToString(spec.namedType) : '';
 };
 
+// ---------------------------------------------------------------------------
+// Enumerations (C++11 7.2).
+
+/**
+ * enum-specifier, opaque-enum-declaration or elaborated `enum` reference,
+ * inside a decl-specifier-seq. A definition or declaration is recorded in
+ * `spec.tagDecl`.
+ *
+ * @returns {Object} The enumeration type (int after an error).
+ */
+Parser.prototype.parseEnumSpecifier = function (spec) {
+  var keyword = this.next();
+  var scoped = false;
+  var nameTok = null;
+  var underlying = null;
+  var form;
+  var decl;
+  var open;
+  var self = this;
+  if (this.acceptKeyword('class') || this.acceptKeyword('struct')) {
+    scoped = true;
+  }
+  this.rejectAttributes(this.parseAttributes(), 'enumerations');
+  if (this._startsQualifiedName(0) && !this.isPunct('::', 0)) {
+    this.fail('qualified enumeration names are not supported yet');
+  }
+  if (this.peek().kind === TokenKind.IDENTIFIER) {
+    nameTok = this.next();
+  } else if (scoped) {
+    this.fail('scoped enumeration requires a name');
+  }
+  if (this.acceptPunct(':')) {
+    underlying = this.parseTypeId();
+  }
+  if (this.isPunct('{')) {
+    form = 'definition';
+  } else if (this.isPunct(';') && nameTok) {
+    // `enum E;` without a fixed type is rejected by Sema, but it is still
+    // meant as a declaration.
+    form = 'declaration';
+  } else if (!nameTok) {
+    this.fail('expected identifier or \'{\'');
+  } else if (scoped || underlying) {
+    this.fail('expected \'{\' or \';\' after enumeration');
+  } else {
+    form = 'reference';
+  }
+  decl = this.sema.actOnEnumHead(nameTok ? nameTok.value : null, scoped, underlying, form,
+    this.rangeOf(nameTok || keyword));
+  if (!decl) {
+    if (form === 'definition') {
+      this._skipBraces();
+    }
+    return this.sema.types.builtin('int');
+  }
+  if (form !== 'reference') {
+    spec.tagDecl = decl;
+  }
+  if (form === 'definition') {
+    open = this.next();
+    this.sema.actOnStartEnumBody(decl);
+    try {
+      while (!this.isPunct('}')) {
+        this.withRecovery(function () {
+          self._parseEnumerator(decl);
+        });
+        if (this.isPunct('}') || this.peek().kind === TokenKind.EOF) {
+          break;
+        }
+        if (!this.acceptPunct(',')) {
+          this.diagnostics.error('expected \'}\' or \',\'', this.rangeOf(this.peek()));
+          this._skipTo('}');
+          break;
+        }
+      }
+      this.expectPunct('}', '', open);
+    } finally {
+      this.sema.actOnFinishEnumBody(decl, this.rangeFrom(open));
+    }
+  }
+  return this.sema.types.enumeration(decl);
+};
+
+/** Skips tokens up to (not including) a punctuator at depth 0. */
+Parser.prototype._skipTo = function (value) {
+  var depth = 0;
+  var tok;
+  while (this.peek().kind !== TokenKind.EOF) {
+    tok = this.peek();
+    if (tok.kind === TokenKind.PUNCT) {
+      if (depth === 0 && tok.value === value) {
+        return;
+      }
+      if (tok.value === '(' || tok.value === '[' || tok.value === '{') {
+        depth++;
+      } else if (tok.value === ')' || tok.value === ']' || tok.value === '}') {
+        if (depth === 0) {
+          return;
+        }
+        depth--;
+      }
+    }
+    this.next();
+  }
+};
+
+/** `name [= constant-expression]` */
+Parser.prototype._parseEnumerator = function (decl) {
+  var nameTok = this.peek();
+  var init = null;
+  if (nameTok.kind !== TokenKind.IDENTIFIER) {
+    this.fail('expected identifier');
+  }
+  this.next();
+  this.rejectAttributes(this.parseAttributes(), 'enumerators');
+  if (this.acceptPunct('=')) {
+    init = this.parseConstantExpression();
+    if (!init) {
+      return;
+    }
+  }
+  this.sema.actOnEnumerator(decl, nameTok.value, init, this.rangeOf(nameTok));
+};
+
 /** Consumes `count` tokens. */
 Parser.prototype._skip = function (count) {
   var i;
@@ -895,7 +1026,7 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
     return !!(BUILTIN_TYPE_WORDS[tok.value] || STORAGE_WORDS[tok.value] ||
       FUNCTION_SPECIFIER_WORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'typedef' ||
-      tok.value === 'constexpr' || tok.value === 'friend');
+      tok.value === 'constexpr' || tok.value === 'friend' || tok.value === 'enum');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&
       tok.value === '::')) {

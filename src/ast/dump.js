@@ -87,9 +87,23 @@ function describe(node) {
     case 'LinkageSpecDecl':
       parts.push('"' + node.language + '"');
       break;
-    case 'RecordDecl':
     case 'EnumDecl':
+      parts.push(node.name || '<anonymous>');
+      if (node.scoped) {
+        parts.push('class');
+      }
+      if (node.underlyingType) {
+        parts.push(quote(node.underlyingType));
+      }
+      if (!node.isDefined) {
+        parts.push('opaque');
+      }
+      break;
     case 'EnumeratorDecl':
+      parts.push(node.name, quote(node.type), node.value ?
+        I.toString(node.value, !T.isUnsigned(node.parent.underlyingType)) : '?');
+      break;
+    case 'RecordDecl':
       parts.push(node.name || '<anonymous>');
       break;
     case 'IntegerLiteral':

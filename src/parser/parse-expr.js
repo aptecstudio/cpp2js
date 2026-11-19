@@ -126,7 +126,7 @@ Parser.prototype.startsTypeId = function (offset) {
   var scan;
   if (tok.kind === TokenKind.KEYWORD) {
     return !!(SIMPLE_TYPE_KEYWORDS[tok.value] || tok.value === 'const' ||
-      tok.value === 'volatile' || tok.value === 'auto');
+      tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'enum');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT && tok.value === '::')) {
     scan = this._scanQualifiedName(offset);

@@ -107,8 +107,9 @@ Evaluator.prototype._evaluate = function (expr) {
     case 'DeclRefExpr':
       decl = expr.decl;
       if (decl.kind === 'EnumeratorDecl') {
+        // Enumerator values are Int64 (D-049).
         return decl.value === null ? this.fail('enumerator value is not known yet') :
-          truncate(I.fromNumber(decl.value), expr.type);
+          truncate(decl.value, expr.type);
       }
       // A const integral variable initialized with a constant (5.19/2).
       if (decl.kind === 'VarDecl' && (decl.type.isConst || decl.isConstexpr) &&

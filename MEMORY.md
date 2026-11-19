@@ -808,6 +808,33 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   readable output); only forward gotos (rejects valid C++).
 - **Not yet**: range-based for (C++11 step), exceptions.
 
+### D-049 — Enumerations
+
+- **Status**: Accepted (agent, 2026-11-19; part of step 5a approved by the
+  owner).
+- **Decision**: `src/semantic/sema-tag.js` (tags) and
+  `Parser.parseEnumSpecifier`:
+  - unscoped and scoped (`enum class` / `enum struct`) enumerations, fixed
+    underlying types, opaque declarations (`enum class E;`,
+    `enum E : int;`), elaborated references (`enum E e;`) and anonymous
+    enumerations; redeclarations check scoped-ness and underlying type;
+  - enumerator values are **Int64**; during the definition an enumerator
+    has the type of its initializer (or of the previous one, widened on
+    overflow); after `}` every enumerator has the enumeration type;
+  - without a fixed type the underlying type is the first of `int`,
+    `unsigned int`, `long long`, `unsigned long long` holding all values
+    (GCC's choice; `long` equals `int` in ILP32); with a fixed type every
+    value must be representable (checked before conversion);
+  - unscoped enumerators are members of both the enumeration scope and the
+    enclosing scope (`E::a` and `a`); scoped ones only of the former;
+    unscoped enumerations promote to integers, scoped ones never convert
+    implicitly;
+  - an opaque declaration and the later definition are the same EnumDecl
+    node (enumerations generate no code of their own).
+- **Reason**: C++11 7.2 semantics with GCC/Clang diagnostics.
+- **Discarded**: a separate node per enumeration redeclaration (no benefit:
+  enumerators are compile-time constants).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

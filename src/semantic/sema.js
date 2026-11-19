@@ -992,3 +992,4 @@ module.exports = {
 require('./sema-expr');
 require('./overload');
 require('./sema-stmt');
+require('./sema-tag');
