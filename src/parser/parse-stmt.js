@@ -64,9 +64,8 @@ Parser.prototype.parseStatement = function () {
     this.expectPunct(';', 'after return statement');
     return this.sema.actOnReturnStatement(value, this.rangeFrom(tok));
   }
-  if (this.startsDeclSpecifier(0) ||
-      (this.isKeyword('using') && this.peek(1).kind === TokenKind.IDENTIFIER &&
-        this.isPunct('=', 2))) {
+  if (this.startsDeclSpecifier(0) || this.isKeyword('using') || this.isKeyword('namespace') ||
+      (this.isPunct('[') && this.isPunct('[', 1))) {
     return ast.createNode('DeclStmt', this.rangeOf(tok), { decls: this.parseDeclaration() });
   }
   value = this.parseAssignmentExpression();

@@ -42,6 +42,13 @@ Parser.prototype.parseUnaryExpression = function () {
   return this.parsePrimaryExpression();
 };
 
+/** `ns::name`, `::name` as an expression. */
+Parser.prototype.parseQualifiedIdExpression = function () {
+  var first = this.peek();
+  var name = this.parseQualifiedName();
+  return this.sema.actOnIdExpression(name.name, this.rangeFrom(first), name.qualifier);
+};
+
 Parser.prototype.parsePrimaryExpression = function () {
   var tok = this.peek();
   var inner;
@@ -59,6 +66,9 @@ Parser.prototype.parsePrimaryExpression = function () {
       this.next();
       return this.sema.actOnStringLiteral(tok, this.rangeOf(tok));
     case TokenKind.IDENTIFIER:
+      if (this._startsQualifiedName(0)) {
+        return this.parseQualifiedIdExpression();
+      }
       this.next();
       return this.sema.actOnIdExpression(tok.value, this.rangeOf(tok));
     case TokenKind.KEYWORD:
@@ -72,6 +82,9 @@ Parser.prototype.parsePrimaryExpression = function () {
       }
       break;
     case TokenKind.PUNCT:
+      if (tok.value === '::') {
+        return this.parseQualifiedIdExpression();
+      }
       if (tok.value === '(') {
         this.next();
         inner = this.parseAssignmentExpression();

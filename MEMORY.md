@@ -674,6 +674,33 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: building types while parsing declarators (hard to get the
   inside-out order right with nested declarators).
 
+### D-043 — Namespaces, linkage specifications and attributes
+
+- **Status**: Accepted (agent, 2026-11-19; implements D-014 and D-031).
+- **Decision**:
+  - every `namespace` occurrence is its own AST node; reopenings point to
+    the first one (`previous`) and share its scope; unnamed namespaces add
+    an implicit using-directive; `inline` cannot be added on reopening;
+  - qualified names (`::opt (name ::)* name`) are scanned without
+    consuming tokens (`_scanQualifiedName`) so that the parser can decide
+    between declarations and expressions; qualifiers must be namespaces,
+    classes or enumerations;
+  - an out-of-namespace definition (`void ns::f() {}`) must match an
+    existing member and be made in an enclosing namespace; its body is
+    looked up in the namespace scope first;
+  - **linkage**: `extern "C"`, `"C++"`, `"JS"`; the unbraced form makes
+    variables declarations; two `extern "C"` functions with the same name
+    and different parameters are `conflicting types` (D-014); in
+    `extern "JS"` everything is a declaration, definitions and
+    initializers are errors (D-031);
+  - **attributes** `[[...]]` are parsed generically; standard ones
+    (`noreturn`, `deprecated`, ...) are ignored silently, unknown ones
+    with a warning; `[[js::module("name")]]` is valid only on a namespace
+    inside `extern "JS"`, and is an error on `--platform browser`.
+- **Reason**: C++11 7.3 and 7.5 semantics, Clang diagnostics.
+- **Discarded**: a single node per namespace with merged declaration
+  lists (loses the source order needed by code generation).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

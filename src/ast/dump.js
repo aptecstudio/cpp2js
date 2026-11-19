@@ -64,6 +64,29 @@ function describe(node) {
       }
       break;
     case 'NamespaceDecl':
+      parts.push(node.name || '<anonymous>');
+      if (node.isInline) {
+        parts.push('inline');
+      }
+      if (node.jsModule) {
+        parts.push('module "' + node.jsModule + '"');
+      }
+      if (node.previous) {
+        parts.push('reopened');
+      }
+      break;
+    case 'NamespaceAliasDecl':
+      parts.push(node.name, '->', node.target.name);
+      break;
+    case 'UsingDirectiveDecl':
+      parts.push(node.namespace.name);
+      break;
+    case 'UsingDecl':
+      parts.push(node.name);
+      break;
+    case 'LinkageSpecDecl':
+      parts.push('"' + node.language + '"');
+      break;
     case 'RecordDecl':
     case 'EnumDecl':
     case 'EnumeratorDecl':

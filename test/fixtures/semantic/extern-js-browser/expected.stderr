@@ -1,0 +1,4 @@
+main.cpp:2:15: error: CommonJS module 'left-pad' cannot be imported on the browser platform
+  namespace [[js::module("left-pad")]] leftpad {
+              ^~~~~~~~~~~~~~~~~~~~~~
+1 error generated.

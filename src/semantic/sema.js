@@ -53,8 +53,9 @@ var BUILTIN_COMBINATIONS = (function () {
  * @param {DiagnosticBag} diagnostics
  * @param {SourceFile} source Main file of the translation unit.
  */
-function Sema(diagnostics, source) {
+function Sema(diagnostics, source, options) {
   this.diagnostics = diagnostics;
+  this.options = options || {};
   this.types = new T.TypeContext();
   this._nextDeclId = 0;
   this.globalNamespace = this.createDecl('NamespaceDecl', null, { name: '' });
@@ -574,6 +575,12 @@ Sema.prototype.declareFunction = function (spec, declarator, type) {
       continue;
     }
     if (!sameSignature(previous[i].type, type)) {
+      if (decl.linkage === 'C' && previous[i].linkage === 'C') {
+        // C functions cannot be overloaded (D-014).
+        diag = this.error('conflicting types for \'' + name + '\'', range);
+        this.note(diag, 'previous declaration is here', previous[i].range);
+        return decl;
+      }
       continue;
     }
     if (previous[i].type.returnType !== type.returnType) {
@@ -701,6 +708,207 @@ Sema.prototype.actOnFinishFunctionBody = function (decl, body) {
   this.popScope();
 };
 
+// ---------------------------------------------------------------------------
+// Namespaces, using, linkage (Phase 5 step 2).
+
+/** The namespace a NamespaceDecl or NamespaceAliasDecl denotes. */
+Sema.prototype.resolveNamespace = function (decl) {
+  return decl.kind === 'NamespaceAliasDecl' ? decl.target : decl;
+};
+
+/**
+ * Opens `namespace name {` (or an anonymous or inline namespace). A
+ * namespace may be reopened: every occurrence gets its own AST node, all
+ * sharing the scope of the first one (`previous`).
+ *
+ * @returns {Object} The NamespaceDecl node of this occurrence.
+ */
+Sema.prototype.actOnStartNamespace = function (name, isInline, range, jsModule) {
+  var parent = this.scope;
+  var previous = name ? parent.lookupLocal(name) : [];
+  var original = null;
+  var decl;
+  var diag;
+  if (parent.kind !== ScopeKind.NAMESPACE) {
+    this.error('namespaces can only be defined in global or namespace scope', range);
+  }
+  if (previous.length) {
+    if (previous[0].kind === 'NamespaceDecl') {
+      original = previous[0];
+    } else {
+      diag = this.error('redefinition of \'' + name + '\' as different kind of symbol', range);
+      this.note(diag, 'previous definition is here', previous[0].range);
+    }
+  }
+  decl = this.createDecl('NamespaceDecl', range, {
+    name: name || '',
+    isInline: isInline || (original ? original.isInline : false),
+    parent: parent.entity,
+    decls: []
+  });
+  decl.jsModule = jsModule || (original ? original.jsModule : null);
+  if (original) {
+    decl.previous = original;
+    decl.scope = original.scope;
+    if (isInline && !original.isInline) {
+      this.error('non-inline namespace cannot be reopened as inline', range);
+    }
+  } else {
+    decl.scope = new Scope(ScopeKind.NAMESPACE, parent, decl);
+    if (name) {
+      parent.declare(name, decl);
+    } else {
+      // An unnamed namespace behaves as if followed by a using-directive
+      // (C++11 7.3.1.1).
+      parent.declare('', decl);
+      parent.addUsingDirective(decl);
+    }
+  }
+  this.scope = decl.scope;
+  return decl;
+};
+
+Sema.prototype.actOnFinishNamespace = function (decl, decls) {
+  decl.decls = decls;
+  this.scope = this.scope.parent;
+};
+
+/** `namespace alias = qualified-namespace;` */
+Sema.prototype.actOnNamespaceAlias = function (name, target, range) {
+  var previous = this.scope.lookupLocal(name);
+  var decl = this.createDecl('NamespaceAliasDecl', range, { name: name, target: target });
+  var diag;
+  if (previous.length && !(previous[0].kind === 'NamespaceAliasDecl' &&
+      previous[0].target === target)) {
+    diag = this.error('redefinition of \'' + name + '\'', range);
+    this.note(diag, 'previous definition is here', previous[0].range);
+    return decl;
+  }
+  if (!previous.length) {
+    this.scope.declare(name, decl);
+  }
+  return decl;
+};
+
+/** `using namespace N;` */
+Sema.prototype.actOnUsingDirective = function (namespaceDecl, range) {
+  if (this.scope.kind === ScopeKind.CLASS) {
+    this.error('\'using namespace\' is not allowed in classes', range);
+  } else {
+    this.scope.addUsingDirective(namespaceDecl);
+  }
+  return this.createDecl('UsingDirectiveDecl', range, { namespace: namespaceDecl });
+};
+
+/** `using N::name;` (C++11 7.3.3). */
+Sema.prototype.actOnUsingDeclaration = function (qualifier, name, range) {
+  var result = scopes.lookupQualified(qualifier, name);
+  var decl;
+  if (!result.decls.length) {
+    this.error('no member named \'' + name + '\' in ' + this.describeQualifier(qualifier),
+      range);
+    return null;
+  }
+  if (result.decls[0].kind === 'NamespaceDecl') {
+    this.error('using declaration cannot refer to a namespace', range);
+    return null;
+  }
+  decl = this.createDecl('UsingDecl', range, { name: name, targets: result.decls });
+  this.scope.declare(name, decl);
+  return decl;
+};
+
+/** `namespace 'std'`, `class 'A'`, `the global namespace`, for messages. */
+Sema.prototype.describeQualifier = function (qualifier) {
+  if (qualifier.kind === 'NamespaceDecl') {
+    return qualifier.name ? 'namespace \'' + this.qualifiedName(qualifier) + '\'' :
+      'the global namespace';
+  }
+  if (qualifier.kind === 'EnumDecl') {
+    return 'enum \'' + this.qualifiedName(qualifier) + '\'';
+  }
+  return (qualifier.tag || 'class') + ' \'' + this.qualifiedName(qualifier) + '\'';
+};
+
+/** Fully qualified name of a declaration, without the leading `::`. */
+Sema.prototype.qualifiedName = function (decl) {
+  var parts = [];
+  var current = decl;
+  while (current && current !== this.globalNamespace) {
+    parts.unshift(current.name || '(anonymous namespace)');
+    current = current.parent;
+  }
+  return parts.join('::');
+};
+
+/** Whether namespace `outer` encloses (or is) namespace `inner`. */
+Sema.prototype.encloses = function (outer, inner) {
+  var current = inner;
+  while (current) {
+    if (current === outer) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+};
+
+/**
+ * Starts a declaration whose declarator-id is qualified (`int ns::x = 1;`,
+ * `void ns::f() {}`): it must redeclare a member of `qualifier`, and the
+ * current namespace must enclose it (C++11 7.3.1.2/2). Until
+ * `actOnFinishQualifiedDeclaration`, lookup happens in the scope of the
+ * qualifier, as names in such definitions are looked up there first.
+ *
+ * @returns {?Scope} The scope to restore afterwards, or null after an error.
+ */
+Sema.prototype.actOnStartQualifiedDeclaration = function (qualifier, name, range) {
+  var saved = this.scope;
+  var current = this.scope.entity;
+  if (qualifier.kind !== 'NamespaceDecl') {
+    // Out-of-line class members come with classes (step 5).
+    this.error('qualified declarations of class members are not supported yet', range);
+    return null;
+  }
+  if (this.scope.kind !== ScopeKind.NAMESPACE || !this.encloses(current, qualifier)) {
+    this.error('cannot define or redeclare \'' + name + '\' here because namespace \'' +
+      this.qualifiedName(current) + '\' does not enclose namespace \'' +
+      this.qualifiedName(qualifier) + '\'', range);
+    return null;
+  }
+  if (!qualifier.scope.lookupLocal(name).length) {
+    this.error('out-of-line definition of \'' + name + '\' does not match any declaration in ' +
+      this.describeQualifier(qualifier), range);
+    return null;
+  }
+  this.scope = qualifier.scope;
+  return saved;
+};
+
+Sema.prototype.actOnFinishQualifiedDeclaration = function (saved) {
+  this.scope = saved;
+};
+
+/**
+ * Checks a declaration made under a linkage specification.
+ *
+ * @param {Object} decl
+ * @param {string} linkage 'C', 'C++' or 'JS'.
+ * @param {boolean} isDefinition Function with a body, or variable defined.
+ */
+Sema.prototype.checkLinkage = function (decl, linkage, isDefinition) {
+  if (linkage !== 'JS' || !decl) {
+    return;
+  }
+  if (isDefinition && decl.kind === 'FunctionDecl') {
+    this.error('function \'' + decl.name + '\' with \'JS\' linkage cannot be defined: it is ' +
+      'provided by JavaScript', decl.range);
+  } else if (isDefinition && decl.kind === 'VarDecl') {
+    this.error('variable \'' + decl.name + '\' with \'JS\' linkage cannot be initialized: it ' +
+      'is provided by JavaScript', decl.range);
+  }
+};
+
 /** Records a top-level declaration in the translation unit. */
 Sema.prototype.addTopLevel = function (decl) {
   if (decl) {
@@ -826,12 +1034,16 @@ Sema.prototype.actOnParenExpr = function (inner, range) {
  * @param {Object} range
  * @param {?Object} [lookup] A lookup result already computed by the parser.
  */
-Sema.prototype.actOnIdExpression = function (name, range, lookup) {
-  var result = lookup || scopes.lookupUnqualified(this.scope, name);
+Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
+  var result = qualifier ? scopes.lookupQualified(qualifier, name) :
+    scopes.lookupUnqualified(this.scope, name);
   var decl;
   var type;
+  var node;
   if (!result.decls.length) {
-    this.error('use of undeclared identifier \'' + name + '\'', range);
+    this.error(qualifier ? 'no member named \'' + name + '\' in ' +
+      this.describeQualifier(qualifier) : 'use of undeclared identifier \'' + name + '\'',
+      range);
     return null;
   }
   if (result.ambiguous) {
@@ -844,15 +1056,21 @@ Sema.prototype.actOnIdExpression = function (name, range, lookup) {
     case 'ParamDecl':
     case 'FieldDecl':
       type = T.removeReference(decl.type);
-      return this._expr('DeclRefExpr', range, { decl: decl }, type, 'lvalue');
+      node = this._expr('DeclRefExpr', range, { decl: decl }, type, 'lvalue');
+      break;
     case 'FunctionDecl':
       // An overload set stays unresolved until the call (step 3).
-      return this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'lvalue');
+      node = this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'lvalue');
+      break;
     case 'EnumeratorDecl':
-      return this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'prvalue');
+      node = this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'prvalue');
+      break;
+    default:
+      this.error('\'' + name + '\' does not refer to a value', range);
+      return null;
   }
-  this.error('\'' + name + '\' does not refer to a value', range);
-  return null;
+  node.qualifier = qualifier || null;
+  return node;
 };
 
 /**

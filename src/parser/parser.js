@@ -17,6 +17,7 @@
  */
 
 var TokenKind = require('../lexer/lexer').TokenKind;
+var ast = require('../ast/nodes');
 var Sema = require('../semantic/sema').Sema;
 var T = require('../semantic/types');
 
@@ -46,11 +47,20 @@ function ParseError() {}
  * @param {DiagnosticBag} diagnostics
  * @param {SourceFile} source Main file.
  */
-function Parser(tokens, diagnostics, source) {
+function Parser(tokens, diagnostics, source, options) {
   this._tokens = tokens;
   this._pos = 0;
   this.diagnostics = diagnostics;
-  this.sema = new Sema(diagnostics, source);
+  this.options = options || {};
+  // Defaults of D-021.
+  this.options.platform = this.options.platform || 'browser';
+  this.options.target = this.options.target || 'es5';
+  this.sema = new Sema(diagnostics, source, this.options);
+  // Language of the enclosing linkage specification ('C', 'C++', 'JS').
+  this._linkage = null;
+  // Whether the linkage specification is the unbraced form
+  // (`extern "C" int x;`), which makes variables declarations only.
+  this._linkageUnbraced = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,22 +241,39 @@ Parser.prototype.withRecovery = function (fn) {
  * @returns {Object} The TranslationUnit node.
  */
 Parser.prototype.parseTranslationUnit = function () {
-  var self = this;
-  var decls;
+  var decls = this.parseDeclarationSeq(false);
   var i;
+  for (i = 0; i < decls.length; i++) {
+    this.sema.addTopLevel(decls[i]);
+  }
+  return this.sema.translationUnit;
+};
+
+/**
+ * Declarations until end of file, or until `}` when `braced`.
+ *
+ * @returns {Array.<Object>}
+ */
+Parser.prototype.parseDeclarationSeq = function (braced) {
+  var self = this;
+  var out = [];
+  var decls;
   while (this.peek().kind !== TokenKind.EOF) {
     if (this.isPunct('}')) {
+      if (braced) {
+        break;
+      }
       this.diagnostics.error('extraneous closing brace (\'}\')', this.rangeOf(this.next()));
       continue;
     }
     decls = this.withRecovery(function () {
       return self.parseDeclaration();
     });
-    for (i = 0; decls && i < decls.length; i++) {
-      this.sema.addTopLevel(decls[i]);
+    if (decls) {
+      out = out.concat(decls.filter(function (d) { return d !== null; }));
     }
   }
-  return this.sema.translationUnit;
+  return out;
 };
 
 /**
@@ -257,14 +284,365 @@ Parser.prototype.parseTranslationUnit = function () {
  * @returns {Array.<Object>} The declarations introduced.
  */
 Parser.prototype.parseDeclaration = function () {
+  var attributes = this.parseAttributes();
   if (this.acceptPunct(';')) {
     return [];
   }
-  if (this.isKeyword('using') && this.peek(1).kind === TokenKind.IDENTIFIER &&
-      this.isPunct('=', 2)) {
-    return [this.parseAliasDeclaration()];
+  if (this.isKeyword('namespace')) {
+    return [this.parseNamespace(false, attributes)];
   }
+  if (this.isKeyword('inline') && this.isKeyword('namespace', 1)) {
+    this.next();
+    return [this.parseNamespace(true, attributes)];
+  }
+  if (this.isKeyword('extern') && this.peek(1).kind === TokenKind.STRING) {
+    return [this.parseLinkageSpecification()];
+  }
+  if (this.isKeyword('using')) {
+    if (this.isKeyword('namespace', 1)) {
+      return [this.parseUsingDirective()];
+    }
+    if (this.peek(1).kind === TokenKind.IDENTIFIER && this.isPunct('=', 2)) {
+      return [this.parseAliasDeclaration()];
+    }
+    return [this.parseUsingDeclaration()];
+  }
+  this.rejectAttributes(attributes, 'declarations');
   return this.parseSimpleDeclaration();
+};
+
+// ---------------------------------------------------------------------------
+// Attributes (C++11 7.6).
+
+/**
+ * Parses `[[ attribute-list ]]...`.
+ *
+ * @returns {Array.<{scope: ?string, name: string, args: ?Array.<Object>,
+ *   range: Object}>}
+ */
+Parser.prototype.parseAttributes = function () {
+  var out = [];
+  var open;
+  var tok;
+  var attr;
+  var attrStart;
+  var depth;
+  while (this.isPunct('[') && this.isPunct('[', 1)) {
+    open = this.next();
+    this.next();
+    while (!this.isPunct(']')) {
+      tok = this.peek();
+      if (tok.kind !== TokenKind.IDENTIFIER && tok.kind !== TokenKind.KEYWORD) {
+        this.fail('expected attribute name');
+      }
+      this.next();
+      attrStart = tok;
+      attr = { scope: null, name: tok.value, args: null, range: null };
+      if (this.acceptPunct('::')) {
+        attr.scope = attr.name;
+        tok = this.peek();
+        if (tok.kind !== TokenKind.IDENTIFIER && tok.kind !== TokenKind.KEYWORD) {
+          this.fail('expected attribute name');
+        }
+        attr.name = this.next().value;
+      }
+      if (this.isPunct('(')) {
+        attr.args = [];
+        depth = 0;
+        this.next();
+        while (depth > 0 || !this.isPunct(')')) {
+          if (this.peek().kind === TokenKind.EOF) {
+            this.fail('expected \')\'');
+          }
+          tok = this.next();
+          depth += tok.value === '(' ? 1 : tok.value === ')' ? -1 : 0;
+          attr.args.push(tok);
+        }
+        this.next();
+      }
+      attr.range = this.rangeFrom(attrStart);
+      out.push(attr);
+      if (!this.acceptPunct(',')) {
+        break;
+      }
+    }
+    this.expectPunct(']', '', open);
+    this.expectPunct(']', '', open);
+  }
+  return out;
+};
+
+/** Standard attributes, accepted and ignored (they need no code). */
+var STANDARD_ATTRIBUTES = { 'noreturn': true, 'carries_dependency': true, 'deprecated': true,
+  'maybe_unused': true, 'nodiscard': true, 'fallthrough': true };
+
+/** Full name of an attribute, e.g. `js::module`. */
+function attributeName(attr) {
+  return (attr.scope ? attr.scope + '::' : '') + attr.name;
+}
+
+/**
+ * Reports attributes that do not apply where they appear. Unknown
+ * attributes are ignored with a warning, as Clang does.
+ */
+Parser.prototype.rejectAttributes = function (attributes, what) {
+  var i;
+  for (i = 0; i < attributes.length; i++) {
+    if (attributeName(attributes[i]) === 'js::module') {
+      this.diagnostics.error('\'js::module\' attribute only applies to namespaces',
+        attributes[i].range);
+    } else if (!STANDARD_ATTRIBUTES[attributeName(attributes[i])]) {
+      this.diagnostics.warning('unknown attribute \'' + attributeName(attributes[i]) +
+        '\' ignored', attributes[i].range);
+    }
+    void what;
+  }
+};
+
+/**
+ * Extracts `[[js::module("name")]]` (D-031) from a namespace's attributes.
+ *
+ * @returns {?string} The module name.
+ */
+Parser.prototype._jsModuleAttribute = function (attributes) {
+  var module = null;
+  var i;
+  var args;
+  for (i = 0; i < attributes.length; i++) {
+    if (attributeName(attributes[i]) !== 'js::module') {
+      if (STANDARD_ATTRIBUTES[attributeName(attributes[i])]) {
+        continue;
+      }
+      this.diagnostics.warning('unknown attribute \'' + attributeName(attributes[i]) +
+        '\' ignored', attributes[i].range);
+      continue;
+    }
+    args = attributes[i].args || [];
+    if (args.length !== 1 || args[0].kind !== TokenKind.STRING ||
+        args[0].value.encoding !== '') {
+      this.diagnostics.error('\'js::module\' attribute requires a module name string',
+        attributes[i].range);
+      continue;
+    }
+    module = String.fromCharCode.apply(null, args[0].value.units);
+    if (!module) {
+      this.diagnostics.error('\'js::module\' attribute requires a non-empty module name',
+        attributes[i].range);
+      module = null;
+    }
+  }
+  return module;
+};
+
+// ---------------------------------------------------------------------------
+// Namespaces, using, linkage specifications.
+
+/**
+ * `namespace [[attrs]] name { ... }`, `namespace { ... }`, or the alias
+ * `namespace name = qualified-namespace;`.
+ */
+Parser.prototype.parseNamespace = function (isInline, leading) {
+  var keyword = this.next();
+  var attributes = this.parseAttributes();
+  var nameTok = null;
+  var open;
+  var decl;
+  var decls;
+  var jsModule;
+  var target;
+  this.rejectAttributes(leading, 'namespaces');
+  if (this.peek().kind === TokenKind.IDENTIFIER) {
+    nameTok = this.next();
+  }
+  if (nameTok && this.acceptPunct('=')) {
+    target = this.parseNamespaceName();
+    this.expectPunct(';', 'after namespace alias');
+    return this.sema.actOnNamespaceAlias(nameTok.value, target, this.rangeOf(nameTok));
+  }
+  jsModule = this._jsModuleAttribute(attributes);
+  if (jsModule !== null) {
+    this._checkJsModule(jsModule, attributes);
+  }
+  open = this.peek();
+  if (!this.isPunct('{')) {
+    this.fail('expected \'{\'');
+  }
+  this.next();
+  decl = this.sema.actOnStartNamespace(nameTok ? nameTok.value : null, isInline,
+    this.rangeOf(nameTok || keyword), jsModule);
+  try {
+    decls = this.parseDeclarationSeq(true);
+    this.expectPunct('}', '', open);
+  } finally {
+    this.sema.actOnFinishNamespace(decl, decls || []);
+  }
+  return decl;
+};
+
+/** Checks where `[[js::module]]` may be used (D-031). */
+Parser.prototype._checkJsModule = function (module, attributes) {
+  var range = attributes[0].range;
+  if (this._linkage !== 'JS') {
+    this.diagnostics.error('\'js::module\' attribute requires the namespace to be declared ' +
+      'inside \'extern "JS"\'', range);
+  } else if (this.options.platform === 'browser') {
+    this.diagnostics.error('CommonJS module \'' + module + '\' cannot be imported on the ' +
+      'browser platform', range);
+  }
+};
+
+/**
+ * Parses a (possibly qualified) name that must denote a namespace.
+ *
+ * @returns {Object} The NamespaceDecl.
+ */
+Parser.prototype.parseNamespaceName = function () {
+  var name = this.parseQualifiedName();
+  var info = name.info;
+  if (info.kind !== 'namespace') {
+    this.fail(info.kind === 'unknown' ? 'expected namespace name' :
+      'expected namespace name', name.nameToken);
+  }
+  return this.sema.resolveNamespace(info.decls[0]);
+};
+
+/** `using namespace N;` */
+Parser.prototype.parseUsingDirective = function () {
+  var start = this.next();
+  var target;
+  this.next();
+  target = this.parseNamespaceName();
+  this.expectPunct(';', 'after using directive');
+  return this.sema.actOnUsingDirective(target, this.rangeFrom(start));
+};
+
+/** `using N::name;` */
+Parser.prototype.parseUsingDeclaration = function () {
+  var start = this.next();
+  var name;
+  this.acceptKeyword('typename');
+  name = this.parseQualifiedName();
+  if (!name.qualifier) {
+    this.fail('using declaration requires a qualified name', name.nameToken);
+  }
+  this.expectPunct(';', 'after using declaration');
+  return this.sema.actOnUsingDeclaration(name.qualifier, name.name, this.rangeFrom(start));
+};
+
+/** `extern "lang" declaration` or `extern "lang" { declaration-seq }`. */
+Parser.prototype.parseLinkageSpecification = function () {
+  var start = this.next();
+  var strTok = this.next();
+  var language = String.fromCharCode.apply(null, strTok.value.units);
+  var savedLinkage = this._linkage;
+  var savedUnbraced = this._linkageUnbraced;
+  var open;
+  var decls;
+  var node;
+  if (language !== 'C' && language !== 'C++' && language !== 'JS') {
+    this.diagnostics.error('unknown linkage language', this.rangeOf(strTok));
+    language = 'C++';
+  }
+  node = ast.createNode('LinkageSpecDecl', this.rangeFrom(start), { language: language,
+    decls: [], braced: false });
+  this._linkage = language === 'C++' ? null : language;
+  try {
+    if (this.isPunct('{')) {
+      open = this.next();
+      node.braced = true;
+      this._linkageUnbraced = false;
+      decls = this.parseDeclarationSeq(true);
+      this.expectPunct('}', '', open);
+    } else {
+      this._linkageUnbraced = true;
+      decls = this.parseDeclaration();
+    }
+  } finally {
+    this._linkage = savedLinkage;
+    this._linkageUnbraced = savedUnbraced;
+  }
+  node.decls = decls;
+  return node;
+};
+
+// ---------------------------------------------------------------------------
+// Qualified names.
+
+/**
+ * Scans `::opt (name ::)* name` from `offset` without consuming tokens,
+ * resolving each qualifier through Sema.
+ *
+ * @returns {?{qualifier: ?Object, global: boolean, name: string, nameOffset:
+ *   number, info: Object, length: number, error: ?Object}} null if no name
+ *   starts there. `error` describes a qualifier that is not a namespace,
+ *   class or enumeration.
+ */
+Parser.prototype._scanQualifiedName = function (offset) {
+  var i = offset;
+  var qualifier = null;
+  var global = false;
+  var tok;
+  var info;
+  var decl;
+  if (this.isPunct('::', i)) {
+    global = true;
+    qualifier = this.sema.globalNamespace;
+    i++;
+  }
+  for (;;) {
+    tok = this.peek(i);
+    if (tok.kind !== TokenKind.IDENTIFIER) {
+      return null;
+    }
+    info = qualifier ? this.sema.classifyQualifiedName(qualifier, tok.value) :
+      this.sema.classifyName(tok.value);
+    if (!this.isPunct('::', i + 1)) {
+      return { qualifier: qualifier, global: global, name: tok.value, nameOffset: i,
+        info: info, length: i - offset + 1, error: null };
+    }
+    decl = info.decls[0];
+    if (info.kind === 'namespace') {
+      qualifier = this.sema.resolveNamespace(decl);
+    } else if (info.kind === 'type' && info.type && info.type.decl) {
+      qualifier = info.type.decl;
+    } else {
+      return { qualifier: qualifier, global: global, name: tok.value, nameOffset: i, info: info,
+        length: i - offset + 1, error: { token: tok, unknown: info.kind === 'unknown' } };
+    }
+    i += 2;
+  }
+};
+
+/** Whether a qualified (or global-qualified) name starts at `offset`. */
+Parser.prototype._startsQualifiedName = function (offset) {
+  return this.isPunct('::', offset) || (this.peek(offset).kind === TokenKind.IDENTIFIER &&
+    this.isPunct('::', offset + 1));
+};
+
+/**
+ * Consumes a possibly qualified name.
+ *
+ * @returns {{qualifier: ?Object, name: string, nameToken: Object, info: Object}}
+ */
+Parser.prototype.parseQualifiedName = function () {
+  var scan = this._scanQualifiedName(0);
+  var i;
+  var tok;
+  if (!scan) {
+    this.fail(this.isPunct('::') ? 'expected unqualified-id' : 'expected unqualified-id');
+  }
+  if (scan.error) {
+    for (i = 0; i < scan.nameOffset; i++) {
+      this.next();
+    }
+    this.fail(scan.error.unknown ? 'use of undeclared identifier \'' + scan.name + '\'' :
+      '\'' + scan.name + '\' is not a class, namespace, or enumeration', scan.error.token);
+  }
+  for (i = 0; i < scan.nameOffset; i++) {
+    this.next();
+  }
+  tok = this.next();
+  return { qualifier: scan.qualifier, name: scan.name, nameToken: tok, info: scan.info };
 };
 
 /** `using Name = type-id ;` */
@@ -287,22 +665,47 @@ Parser.prototype.parseSimpleDeclaration = function () {
   var decls = [];
   var declarator;
   var decl;
+  var saved;
   if (this.acceptPunct(';')) {
     this.diagnostics.warning('declaration does not declare anything', spec.range);
     return [];
   }
+  spec.linkage = this._linkage;
+  if ((this._linkageUnbraced || this._linkage === 'JS') && !spec.storage && !spec.isTypedef) {
+    // `extern "C" int x;` declares; in extern "JS" everything is provided
+    // by JavaScript (D-031).
+    spec.storage = 'extern';
+  }
   for (;;) {
     declarator = this.parseDeclarator(false);
-    decl = this.sema.actOnDeclarator(spec, declarator);
-    if (decl && decl.kind === 'FunctionDecl' && this.isPunct('{') && !decls.length) {
-      if (this.sema.currentFunction()) {
-        this.fail('function definition is not allowed here');
-      }
-      this.parseFunctionBody(decl);
-      return [decl];
+    saved = undefined;
+    if (declarator.qualifier) {
+      saved = this.sema.actOnStartQualifiedDeclaration(declarator.qualifier, declarator.name,
+        declarator.range);
     }
-    this.parseInitializer(decl);
+    if (saved === null && this.isPunct('{')) {
+      // The definition was rejected: skip its body without further errors.
+      this._skipBraces();
+      return decls;
+    }
+    try {
+      decl = saved === null ? null : this.sema.actOnDeclarator(spec, declarator);
+      if (decl && decl.kind === 'FunctionDecl' && this.isPunct('{') && !decls.length) {
+        if (this.sema.currentFunction()) {
+          this.fail('function definition is not allowed here');
+        }
+        this.sema.checkLinkage(decl, this._linkage, true);
+        this.parseFunctionBody(decl);
+        return [decl];
+      }
+      this.parseInitializer(decl);
+    } finally {
+      if (saved) {
+        this.sema.actOnFinishQualifiedDeclaration(saved);
+      }
+    }
     if (decl) {
+      this.sema.checkLinkage(decl, this._linkage, decl.kind === 'VarDecl' && !!decl.init);
       decls.push(decl);
     }
     if (!this.acceptPunct(',')) {
@@ -379,7 +782,7 @@ Parser.prototype.parseDeclSpecifiers = function () {
   var first = this.peek();
   var tok;
   var hasType = false;
-  var info;
+  var scan;
   for (;;) {
     tok = this.peek();
     if (tok.kind === TokenKind.KEYWORD) {
@@ -428,20 +831,23 @@ Parser.prototype.parseDeclSpecifiers = function () {
       this.next();
       continue;
     }
-    if (tok.kind === TokenKind.IDENTIFIER && !hasType) {
-      info = this.sema.classifyName(tok.value);
-      if (info.kind === 'type') {
-        spec.namedType = info.type;
+    if ((tok.kind === TokenKind.IDENTIFIER || this.isPunct('::')) && !hasType) {
+      scan = this._scanQualifiedName(0);
+      if (scan && !scan.error && scan.info.kind === 'type') {
+        this._skip(scan.length);
+        spec.namedType = scan.info.type;
         hasType = true;
-        this.next();
         continue;
       }
-      if (info.kind === 'unknown' && this._looksLikeDeclaratorStart(1)) {
+      if (scan && !scan.error && scan.info.kind === 'unknown' &&
+          this._looksLikeDeclaratorStart(scan.length)) {
         // `foo x;` with an unknown `foo`: Clang's "unknown type name".
-        this.diagnostics.error('unknown type name \'' + tok.value + '\'', this.rangeOf(tok));
+        this._skip(scan.nameOffset);
+        this.diagnostics.error(scan.qualifier ? 'no type named \'' + scan.name + '\' in ' +
+          this.sema.describeQualifier(scan.qualifier) : 'unknown type name \'' + scan.name +
+          '\'', this.rangeOf(this.next()));
         spec.namedType = this.sema.types.builtin('int');
         hasType = true;
-        this.next();
         continue;
       }
     }
@@ -465,6 +871,14 @@ Parser.prototype._typeSpelling = function (spec) {
   return spec.namedType ? T.typeToString(spec.namedType) : '';
 };
 
+/** Consumes `count` tokens. */
+Parser.prototype._skip = function (count) {
+  var i;
+  for (i = 0; i < count; i++) {
+    this.next();
+  }
+};
+
 /** Whether the token at `offset` can start a (named) declarator. */
 Parser.prototype._looksLikeDeclaratorStart = function (offset) {
   var tok = this.peek(offset);
@@ -476,16 +890,17 @@ Parser.prototype._looksLikeDeclaratorStart = function (offset) {
 /** Whether the current token can start a decl-specifier-seq. */
 Parser.prototype.startsDeclSpecifier = function (offset) {
   var tok = this.peek(offset);
-  var info;
+  var scan;
   if (tok.kind === TokenKind.KEYWORD) {
     return !!(BUILTIN_TYPE_WORDS[tok.value] || STORAGE_WORDS[tok.value] ||
       FUNCTION_SPECIFIER_WORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'typedef' ||
       tok.value === 'constexpr' || tok.value === 'friend');
   }
-  if (tok.kind === TokenKind.IDENTIFIER) {
-    info = this.sema.classifyName(tok.value);
-    return info.kind === 'type';
+  if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&
+      tok.value === '::')) {
+    scan = this._scanQualifiedName(offset);
+    return !!scan && !scan.error && scan.info.kind === 'type';
   }
   return false;
 };
@@ -500,10 +915,11 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
  */
 Parser.prototype.parseDeclarator = function (abstract) {
   var first = this.peek();
-  var declarator = { ptrOps: [], name: null, nameToken: null, nested: null, suffixes: [],
-    range: null };
+  var declarator = { ptrOps: [], name: null, nameToken: null, qualifier: null, nested: null,
+    suffixes: [], range: null };
   var tok;
   var op;
+  var qualified;
   for (;;) {
     tok = this.peek();
     if (this.isPunct('*')) {
@@ -529,7 +945,12 @@ Parser.prototype.parseDeclarator = function (abstract) {
   }
 
   tok = this.peek();
-  if (tok.kind === TokenKind.IDENTIFIER) {
+  if (!abstract && this._startsQualifiedName(0)) {
+    qualified = this.parseQualifiedName();
+    declarator.name = qualified.name;
+    declarator.nameToken = qualified.nameToken;
+    declarator.qualifier = qualified.qualifier;
+  } else if (tok.kind === TokenKind.IDENTIFIER) {
     this.next();
     declarator.name = tok.value;
     declarator.nameToken = tok;
@@ -539,6 +960,7 @@ Parser.prototype.parseDeclarator = function (abstract) {
     this.expectPunct(')', '', tok);
     declarator.name = declarator.nested.name;
     declarator.nameToken = declarator.nested.nameToken;
+    declarator.qualifier = declarator.nested.qualifier;
   } else if (!abstract) {
     this.fail('expected unqualified-id');
   }

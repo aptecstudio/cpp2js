@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 2 / 13   |
+| 5   | Parser and AST                          | In progress  | 4 / 13   |
 | 6   | Semantic analysis                       | In progress  | 3 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 52 / 124 items done.**
+**Overall: 54 / 124 items done.**
 
 ---
 
@@ -108,7 +108,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] AST node definitions and visitor utilities (D-040).
 - [x] Declarations: variables, functions, typedefs, `using` aliases (D-042); using-declarations
   and directives come with namespaces.
-- [ ] Namespaces.
+- [x] Namespaces, using-declarations/directives, aliases, linkage specifications,
+  attributes (D-043).
 - [ ] Classes and structs: members, access specifiers, constructors, destructors.
 - [ ] Inheritance (single; multiple if in scope).
 - [ ] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`.
@@ -118,7 +119,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
 - [ ] `__js__` statements/expressions in the AST (D-026).
-- [ ] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
+- [x] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
 
 ## Phase 6 — Semantic analysis
 
@@ -237,4 +238,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   model), D-037 (UTF-8 byte strings), D-038 (phase-by-phase strategy).
 - **2026-11-19** — Phase 6 started: type representation (D-039). Phase 5 started: AST nodes
   (D-040). Scopes and name lookup (D-041). Parser step 1: declarations and declarators
-  (D-042).
+  (D-042). Step 2: namespaces, linkage, attributes (D-043).

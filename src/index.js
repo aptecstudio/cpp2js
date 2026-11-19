@@ -81,7 +81,10 @@ function compile(options) {
     units.push({
       source: sources[i],
       tokens: tokens,
-      ast: new Parser(tokens, diagnostics, sources[i]).parseTranslationUnit()
+      ast: new Parser(tokens, diagnostics, sources[i], {
+        platform: options.platform || 'browser',
+        target: options.target || 'es5'
+      }).parseTranslationUnit()
     });
   }
 
