@@ -17,6 +17,10 @@
     "type": "git",
     "url": "https://github.com/aptecstudio/cpp2js.git"
   },
+  "homepage": "https://github.com/aptecstudio/cpp2js#readme",
+  "bugs": {
+    "url": "https://github.com/aptecstudio/cpp2js/issues"
+  },
   "main": "src/index.js",
   "bin": {
     "cpp2js": "bin/cpp2js.js"
@@ -26,7 +30,8 @@
     "include/",
     "src/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "!**/.gitkeep"
   ],
   "scripts": {
     "test": "node test/run.js"

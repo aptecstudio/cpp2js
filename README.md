@@ -28,6 +28,22 @@ single, self-contained JavaScript bundle targeting **ES5** or **ES6**.
 - **Runs anywhere** — the transpiler itself is written entirely in
   JavaScript ES5 for broad backward compatibility.
 
+## Installation
+
+cpp2js needs only Node.js 0.10 or later and has no dependencies.
+
+```sh
+# From npm (once published)
+npm install -g cpp2js
+
+# From a clone of the repository
+git clone https://github.com/aptecstudio/cpp2js.git
+cd cpp2js
+npm install -g .
+```
+
+Then run `cpp2js --help`.
+
 ## Planned usage
 
 The command-line interface (`cpp2js --help`) and the C++11 preprocessor are in
