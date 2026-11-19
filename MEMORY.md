@@ -553,7 +553,8 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 
 ### D-037 — Narrow strings are UTF-8 bytes at run time
 
-- **Status**: Accepted (owner, 2026-11-19).
+- **Status**: **Superseded by D-044** (owner, 2026-11-19: performance and
+  interoperability matter more than byte fidelity for non-ASCII text).
 - **Decision**: `std::string`, `char` arrays and narrow string literals
   hold **UTF-8 bytes**, as in native C++: `"é"` has `size() == 2`, `s[i]` is
   a byte, `strlen`/`memcpy` behave as expected. Conversion to and from
@@ -700,6 +701,47 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Reason**: C++11 7.3 and 7.5 semantics, Clang diagnostics.
 - **Discarded**: a single node per namespace with merged declaration
   lists (loses the source order needed by code generation).
+
+### D-044 — Strings are JavaScript strings, exact for ASCII
+
+- **Status**: Accepted (owner, 2026-11-19). Supersedes D-037.
+- **Decision**: `std::string` and narrow string literals are represented
+  at run time by **JavaScript strings** (UTF-16). For **ASCII** text the
+  behaviour is exactly that of C++: `size()`, `s[i]`, comparisons,
+  `find`, `strlen` give the same results. For non-ASCII text lengths and
+  indexes count UTF-16 code units instead of UTF-8 bytes; this divergence
+  is documented. Code generation converts the UTF-8 units delivered by the
+  lexer (D-034) into JavaScript strings. Concatenation, comparison,
+  search and hashing use the native string operations; strings pass to
+  console, DOM, Node.js and `extern "JS"` without conversion.
+- **Reason**: owner choice after comparing performance: native strings are
+  much faster for the common operations and free at the JavaScript
+  boundaries.
+- **Discarded**: UTF-8 byte arrays (D-037); "byte strings" with one UTF-8
+  byte per character (exact but with conversions at the boundaries).
+- **Open detail (Phase 10)**: value of `char c = s[i]` when the unit is
+  above 127, and in-place modification `s[i] = c` (JavaScript strings are
+  immutable).
+
+### D-045 — No npm publication before the project is finished
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: the package is installable (`npm install -g .` from a
+  clone, checked with `npm pack` and a global install) but is **not
+  published** on the npm registry until the project is finished. The
+  name `cpp2js` was free on 2026-11-19.
+- **Reason**: owner choice; the compiler does not generate code yet.
+- **Discarded**: publishing a 0.0.x placeholder now; publishing at v0.1.0.
+
+### D-046 — Push at the end of every phase
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: commits stay local during a phase; when a phase of
+  `ROADMAP.md` is completed, all commits are pushed to `origin main`.
+  Phases 5 and 6 are developed together (D-035), so the next push comes
+  when Phase 5 is complete.
+- **Reason**: owner choice.
+- **Discarded**: pushing after every step; pushing immediately.
 
 ### D-022 — In-house test runner
 

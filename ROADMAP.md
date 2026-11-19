@@ -200,7 +200,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [ ] Contribution guide (`CONTRIBUTING.md`).
 - [ ] Changelog (`CHANGELOG.md`).
 - [ ] First tagged release `v0.1.0`.
-- [ ] Publish on npm (optional).
+- [ ] Publish on npm, only when the project is finished (D-045). The package is already
+  installable from a clone with `npm install -g .`.
 
 ---
 
@@ -239,3 +240,5 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Phase 6 started: type representation (D-039). Phase 5 started: AST nodes
   (D-040). Scopes and name lookup (D-041). Parser step 1: declarations and declarators
   (D-042). Step 2: namespaces, linkage, attributes (D-043).
+- **2026-11-19** — Package installable with npm, not published (D-045); strings become
+  JavaScript strings (D-044, supersedes D-037); push at the end of every phase (D-046).
