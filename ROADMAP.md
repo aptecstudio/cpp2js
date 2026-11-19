@@ -102,6 +102,9 @@ Decisions to take with the owner before writing the compiler core.
 
 ## Phase 5 — Parser and AST
 
+Developed together with Phase 6: the parser queries semantic analysis while parsing
+(D-035).
+
 - [ ] AST node definitions and visitor utilities.
 - [ ] Declarations: variables, functions, typedefs, `using`.
 - [ ] Namespaces.
@@ -229,3 +232,5 @@ Decisions to take with the owner before writing the compiler core.
   expansion, includes, `#line` (D-033); two Phase 4 items done by the pp-lexer. Next: Phase 4.
 - **2026-11-19** — Phase 4 completed: lexer, literal decoding, string concatenation (D-034).
   Next: Phase 5 (parser).
+- **2026-11-19** — Decisions D-035 (parser and semantics interleaved), D-036 (ILP32 data
+  model), D-037 (UTF-8 byte strings).

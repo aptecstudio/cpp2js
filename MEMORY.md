@@ -523,6 +523,48 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: typing integer literals in the lexer; decoding strings
   directly to JavaScript strings (would lose the C++ byte view).
 
+### D-035 — Parser and semantic analysis are interleaved
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: as in Clang, the parser asks semantic analysis, while
+  parsing, what a name denotes (type, template, namespace, value) and
+  semantic analysis builds scopes and declarations as the parser reports
+  them. Phases 5 and 6 are developed together; the AST produced is
+  already resolved (names bound to declarations, expressions typed).
+- **Reason**: C++ syntax depends on name lookup (`a * b;`, `T(x);`,
+  `a < b > c;`); only lookup with full scoping (namespaces, class members,
+  base classes) follows the standard exactly.
+- **Discarded**: a parser-side table of type names (wrong with namespaces
+  and inherited members); an ambiguous AST resolved later (GLR-style,
+  more complex AST).
+
+### D-036 — Data model ILP32
+
+- **Status**: Accepted (owner, 2026-11-19). Completes D-016.
+- **Decision**: `char` 8 bits (signed, D-033), `short` 16, `int` 32,
+  **`long` 32**, `long long` 64, pointers 32 bits; `size_t` and
+  `ptrdiff_t` are 32-bit (`unsigned int` / `int`); `wchar_t` 32 bits signed;
+  `float` 32 and `double` 64 IEEE-754; `long double` = `double`; `bool` 1
+  byte. This is the model of Windows 32-bit, wasm32 and Emscripten.
+- **Reason**: 32-bit arithmetic is fast and exact in JavaScript (`| 0`,
+  `>>> 0`, `Math.imul`); 64-bit values need the slow int64 helper, so they
+  are limited to `long long`.
+- **Discarded**: LP64 (`long`, pointers and `size_t` on 64 bits).
+
+### D-037 — Narrow strings are UTF-8 bytes at run time
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: `std::string`, `char` arrays and narrow string literals
+  hold **UTF-8 bytes**, as in native C++: `"é"` has `size() == 2`, `s[i]` is
+  a byte, `strlen`/`memcpy` behave as expected. Conversion to and from
+  JavaScript strings (UTF-16) happens only at the boundaries: console and
+  streams, DOM and Node.js bindings, `extern "JS"` calls, `__js__`
+  operands of string type.
+- **Reason**: programs must produce the same results as natively (D-016);
+  the lexer already delivers UTF-8 units (D-034).
+- **Discarded**: `std::string` backed by a JavaScript string (fast interop,
+  but sizes and indexing differ from C++).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -814,11 +856,6 @@ time and simply use the obfuscated names.
 
 To be asked through interactive polls (D-027).
 
-- **Data model (Phase 6)**: size of `long` (32 bits like ILP32/Windows, or
-  64 like LP64), `sizeof` of pointers, `size_t` / `ptrdiff_t`.
-- **Run-time strings (Phases 7 and 10)**: `std::string` and narrow
-  literals as UTF-8 bytes (faithful sizes) or as JavaScript strings
-  (UTF-16, easy interop).
 - Details to settle when the relevant phase starts: how `std::string` and
   JavaScript strings map onto each other in bindings; lifetime of C++
   lambdas passed as `js::function` callbacks; which Node.js core modules get
