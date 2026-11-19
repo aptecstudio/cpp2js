@@ -682,6 +682,9 @@ Parser.prototype.parseSimpleDeclaration = function () {
   for (;;) {
     declarator = this.parseDeclarator(false);
     saved = undefined;
+    if (declarator.qualifier && declarator.qualifier.kind === 'RecordDecl') {
+      return this._parseOutOfLineMember(spec, declarator);
+    }
     if (declarator.qualifier) {
       saved = this.sema.actOnStartQualifiedDeclaration(declarator.qualifier, declarator.name,
         declarator.range);
@@ -830,6 +833,11 @@ Parser.prototype.parseDeclSpecifiers = function () {
         spec.isFriend = true;
       } else if (tok.value === 'enum' && !hasType) {
         spec.namedType = this.parseEnumSpecifier(spec);
+        hasType = true;
+        continue;
+      } else if ((tok.value === 'class' || tok.value === 'struct' || tok.value === 'union') &&
+          !hasType) {
+        spec.namedType = this.parseClassSpecifier(spec);
         hasType = true;
         continue;
       } else {
@@ -1026,7 +1034,8 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
     return !!(BUILTIN_TYPE_WORDS[tok.value] || STORAGE_WORDS[tok.value] ||
       FUNCTION_SPECIFIER_WORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'typedef' ||
-      tok.value === 'constexpr' || tok.value === 'friend' || tok.value === 'enum');
+      tok.value === 'constexpr' || tok.value === 'friend' || tok.value === 'enum' ||
+      tok.value === 'class' || tok.value === 'struct' || tok.value === 'union');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&
       tok.value === '::')) {
@@ -1256,6 +1265,64 @@ Parser.prototype.parseTypeId = function () {
   return type || this.sema.types.builtin('int');
 };
 
+/**
+ * Out-of-line definition of a member function: `R C::f(params) { ... }`.
+ */
+Parser.prototype._parseOutOfLineMember = function (spec, declarator) {
+  var record = declarator.qualifier;
+  var saved = this.sema.startClassMemberDefinition(record, declarator.name, declarator.range);
+  var type;
+  var decl = null;
+  if (saved === null) {
+    this._skipDefinitionRest();
+    return [];
+  }
+  try {
+    type = this.sema.typeFromDeclarator(this.sema.typeFromSpecifiers(spec), declarator);
+    if (!T.isFunction(type)) {
+      this.fail('out-of-line definitions of data members are not supported yet',
+        declarator.nameToken);
+    }
+    decl = this.sema.actOnOutOfLineMethod(spec, declarator, type, record);
+    if (!this.isPunct('{')) {
+      if (decl) {
+        this.diagnostics.error('out-of-line declaration of a member must be a definition',
+          declarator.range);
+      }
+      this.expectPunct(';', 'after top level declarator');
+      return [];
+    }
+    if (!decl) {
+      this._skipBraces();
+      return [];
+    }
+    this.parseFunctionBody(decl);
+  } finally {
+    this.sema.actOnFinishQualifiedDeclaration(saved);
+  }
+  return [decl];
+};
+
+/** After a rejected definition: skips a body or up to `;`. */
+Parser.prototype._skipDefinitionRest = function () {
+  while (this.peek().kind !== TokenKind.EOF) {
+    if (this.isPunct('{')) {
+      this._skipBraces();
+      return;
+    }
+    if (this.isPunct(';')) {
+      this.next();
+      return;
+    }
+    if (this.isPunct('(') || this.isPunct('[')) {
+      this.next();
+      this._skipBalanced();
+      continue;
+    }
+    this.next();
+  }
+};
+
 /** Function body: compound statement (step 1: minimal statements). */
 Parser.prototype.parseFunctionBody = function (decl) {
   var body;
@@ -1274,3 +1341,4 @@ module.exports = {
 
 require('./parse-expr');
 require('./parse-stmt');
+require('./parse-class');

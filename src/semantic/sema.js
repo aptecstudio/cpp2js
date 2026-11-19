@@ -409,6 +409,10 @@ Sema.prototype.declareVariable = function (spec, declarator, type) {
   if (T.isVoid(type)) {
     this.error('variable has incomplete type \'void\'', range);
     type = this.types.builtin('int');
+  } else if ((T.isRecord(type) || T.isEnum(type)) && !T.isComplete(type) &&
+      spec.storage !== 'extern') {
+    this.error('variable has incomplete type ' + this._quoted(type), range);
+    type = this.types.builtin('int');
   }
   decl = this.createDecl('VarDecl', range, {
     name: name,
@@ -576,9 +580,12 @@ Sema.prototype._createParams = function (params) {
     } else if (params[i].name) {
       seen[params[i].name] = params[i].range;
     }
+    // The parameter variable keeps its cv-qualifiers; only the function
+    // type drops them (C++11 8.3.5/5).
     out.push(this.createDecl('ParamDecl', params[i].range, {
       name: params[i].name,
-      type: this.types.adjustParameter(params[i].type),
+      type: T.isArray(params[i].type) || T.isFunction(params[i].type) ?
+        this.types.adjustParameter(params[i].type) : params[i].type,
       defaultArg: params[i].defaultArg ? this.convertDefaultArgument(params[i].defaultArg,
         this.types.adjustParameter(params[i].type)) : null,
       index: i
@@ -993,3 +1000,4 @@ require('./sema-expr');
 require('./overload');
 require('./sema-stmt');
 require('./sema-tag');
+require('./sema-class');

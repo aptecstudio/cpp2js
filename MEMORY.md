@@ -835,6 +835,41 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: a separate node per enumeration redeclaration (no benefit:
   enumerators are compile-time constants).
 
+### D-050 — Classes: members, this, access, layout
+
+- **Status**: Accepted (agent, 2026-11-19; part of step 5b approved by the
+  owner).
+- **Decision**: `src/semantic/sema-class.js` and `src/parser/parse-class.js`:
+  - `class`/`struct`/`union` definitions, forward declarations and
+    elaborated references (`struct S *p;` declares S in the nearest
+    namespace or block scope); default access private for `class`,
+    public otherwise; data members (with `mutable`, bit-fields and default
+    member initializers), member functions, nested types and typedefs;
+  - **member function bodies written in the class are parsed when the
+    outermost class is complete** (C++11 9.2/2), by saving and restoring
+    the token position; default arguments and member initializers are
+    still parsed in place (later members are not visible there yet);
+  - `this` is a prvalue `cv C *` with the method's cv; members named
+    without an object become implicit `this->m`; member access computes
+    cv (object cv + member cv, `mutable` excluded) and category (lvalue,
+    or xvalue for prvalue objects); reference members are lvalues;
+  - member function calls resolve overloads with the **implicit object
+    argument** (a const object only accepts const methods; a non-const
+    object prefers non-const ones); out-of-line definitions `R C::f()`
+    must match a declaration exactly (cv and return type included);
+  - **access control**: private members only from members of the class
+    and of classes nested in it; protected also from derived classes
+    (step 5d); Clang's messages with a `declared private here` note;
+  - **layout** (ILP32, natural alignment as wasm32): fields aligned to
+    their size (max 8), bit-fields packed in units of their type, unions
+    sized by the largest member, empty classes 1 byte; `sizeof` uses it;
+  - aggregates (no constructors, private fields, bases, virtuals) accept
+    brace initialization member by member, with narrowing checks.
+- **Reason**: C++11 clauses 9 and 11; native `sizeof` values (D-016).
+- **Not yet**: constructors and destructors (5c), inheritance and virtual
+  functions (5d), operators (5e), friends and static members (5f),
+  anonymous structs/unions, qualified class names in definitions.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

@@ -1,0 +1,10 @@
+main.cpp:7:24: error: cannot assign to non-static data member within const member function 'reset'
+  void reset() const { balance = 0; }
+                       ^~~~~~~
+main.cpp:20:5: error: 'balance' is a private member of 'Account'
+  a.balance = 5;
+    ^~~~~~~
+main.cpp:2:10: note: declared private here
+  double balance = 0;
+         ^~~~~~~
+2 errors generated.

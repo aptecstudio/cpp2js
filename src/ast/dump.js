@@ -59,6 +59,15 @@ function describe(node) {
       if (node.previous) {
         parts.push('redecl');
       }
+      if (node.access && (node.kind === 'FieldDecl' || node.isMethod)) {
+        parts.push(node.access);
+      }
+      if (node.isMutable) {
+        parts.push('mutable');
+      }
+      if (node.width !== null && node.width !== undefined) {
+        parts.push(':' + node.width);
+      }
       if (node.initStyle) {
         parts.push(node.initStyle + '-init');
       }
@@ -104,7 +113,22 @@ function describe(node) {
         I.toString(node.value, !T.isUnsigned(node.parent.underlyingType)) : '?');
       break;
     case 'RecordDecl':
-      parts.push(node.name || '<anonymous>');
+      parts.push(node.tag, node.name || '<anonymous>');
+      if (node.complete) {
+        parts.push('size=' + node.size, 'align=' + node.align);
+      } else {
+        parts.push('incomplete');
+      }
+      break;
+    case 'MemberExpr':
+      parts.push((node.isArrow ? '->' : '.') + node.member.name, quote(node.type),
+        node.valueCategory);
+      break;
+    case 'ThisExpr':
+      parts.push(quote(node.type), node.valueCategory);
+      if (node.isImplicit) {
+        parts.push('implicit');
+      }
       break;
     case 'IntegerLiteral':
       parts.push(quote(node.type), I.toString(node.value, !T.isUnsigned(node.type)));

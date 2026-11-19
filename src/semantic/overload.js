@@ -145,6 +145,81 @@ Sema.prototype.resolveOverload = function (candidates, args, range, name) {
   return { decl: best.decl, args: this._applyCandidate(best, args, range) };
 };
 
+/**
+ * Overload resolution for member functions: the implicit object argument
+ * takes part as an extra first argument (C++11 13.3.1/2-5).
+ *
+ * @param {Array.<Object>} candidates Methods.
+ * @param {Object} objType Type of the object expression.
+ * @returns {?{decl: Object, args: Array.<Object>}}
+ */
+Sema.prototype.resolveMethodOverload = function (candidates, objType, args, range, name) {
+  var checked = [];
+  var viable = [];
+  var best = null;
+  var diag;
+  var c;
+  var objectConv;
+  var i;
+  var j;
+  for (i = 0; i < candidates.length; i++) {
+    objectConv = candidates[i].isStatic ? { kind: 'standard', rank: 0, steps: [],
+      isBoolean: false, target: null, reference: null } :
+      this._objectConversion(candidates[i], objType);
+    if (!objectConv) {
+      checked.push({ decl: candidates[i], viable: false, conversions: [],
+        reason: '\'this\' argument has type ' + this.quote(objType) + ', but method is not ' +
+          'marked ' + (objType.isConst ? 'const' : 'volatile') });
+      continue;
+    }
+    c = this._checkCandidate(candidates[i], args);
+    if (c.viable) {
+      c.conversions = [objectConv].concat(c.conversions);
+      viable.push(c);
+    }
+    checked.push(c);
+  }
+  if (!viable.length) {
+    if (candidates.length === 1 && checked[0].reason &&
+        /^'this' argument/.test(checked[0].reason)) {
+      diag = this.error('\'this\' argument to member function \'' + name + '\' has type ' +
+        this.quote(objType) + ', but function is not marked ' +
+        (objType.isConst ? 'const' : 'volatile'), range);
+      this.note(diag, '\'' + name + '\' declared here', candidates[0].range);
+      return null;
+    }
+    if (candidates.length === 1) {
+      return this._callSingle(candidates[0], args, range);
+    }
+    diag = this.error('no matching member function for call to \'' + name + '\'', range);
+    for (i = 0; i < checked.length; i++) {
+      this.note(diag, 'candidate function not viable: ' + checked[i].reason,
+        checked[i].decl.range);
+    }
+    return null;
+  }
+  for (i = 0; i < viable.length; i++) {
+    for (j = 0; j < viable.length; j++) {
+      if (i !== j && !isBetter(viable[i], viable[j])) {
+        break;
+      }
+    }
+    if (j === viable.length) {
+      best = viable[i];
+      break;
+    }
+  }
+  if (!best) {
+    diag = this.error('call to member function \'' + name + '\' is ambiguous', range);
+    for (i = 0; i < viable.length; i++) {
+      this.note(diag, 'candidate function', viable[i].decl.range);
+    }
+    return null;
+  }
+  best.conversions = best.conversions.slice(1);
+  return { decl: best.decl, args: this._applyCandidate(best, args, range) };
+};
+
 Sema.prototype._callSingle = function (decl, args, range) {
   var converted = this._convertArguments(decl.type, decl, args, range);
   return converted ? { decl: decl, args: converted } : null;

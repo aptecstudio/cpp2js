@@ -110,7 +110,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   and directives come with namespaces.
 - [x] Namespaces, using-declarations/directives, aliases, linkage specifications,
   attributes (D-043).
-- [ ] Classes and structs: members, access specifiers, constructors, destructors.
+- [~] Classes and structs: members, access specifiers (D-050); constructors, destructors (5c).
 - [ ] Inheritance (single; multiple if in scope).
 - [x] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`, `goto` (D-048).
 - [x] Expressions with full C++ precedence and associativity (D-047).
@@ -129,7 +129,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [~] Type checking of expressions and implicit conversions (D-047; class types pending).
 - [~] Function overload resolution (D-047; user-defined conversions pending).
 - [ ] Constructors, destructors and object lifetime rules.
-- [ ] Access control: `public` / `protected` / `private`.
+- [~] Access control: `public` / `protected` / `private` (D-050; inheritance and friends
+  pending).
 - [ ] `friend` functions and classes.
 - [ ] Virtual functions and overriding.
 - [ ] `auto` type deduction and lambda captures.
@@ -247,3 +248,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Parser step 4: statements and jump checks; goto will use the hybrid
   technique (D-048).
 - **2026-11-19** — Parser step 5a: enumerations (D-049).
+- **2026-11-19** — Parser step 5b: classes, members, this, access, layout (D-050).

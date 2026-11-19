@@ -126,7 +126,8 @@ Parser.prototype.startsTypeId = function (offset) {
   var scan;
   if (tok.kind === TokenKind.KEYWORD) {
     return !!(SIMPLE_TYPE_KEYWORDS[tok.value] || tok.value === 'const' ||
-      tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'enum');
+      tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'enum' ||
+      tok.value === 'class' || tok.value === 'struct' || tok.value === 'union');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT && tok.value === '::')) {
     scan = this._scanQualifiedName(offset);
@@ -307,6 +308,7 @@ Parser.prototype.parsePostfixExpression = function () {
   var open;
   var args;
   var index;
+  var name;
   for (;;) {
     tok = this.peek();
     if (tok.kind !== TokenKind.PUNCT) {
@@ -328,7 +330,14 @@ Parser.prototype.parsePostfixExpression = function () {
       case '.':
       case '->':
         this.next();
-        this.fail('member access requires classes, which are not supported yet');
+        name = this.peek();
+        if (name.kind !== TokenKind.IDENTIFIER) {
+          this.fail(name.kind === TokenKind.PUNCT && name.value === '~' ?
+            'destructors are not supported yet' : 'expected unqualified-id');
+        }
+        this.next();
+        expr = this.sema.actOnMemberAccess(expr, name.value, tok.value === '->',
+          this.rangeFrom(start), this.rangeOf(name));
         break;
       case '++':
       case '--':
@@ -477,7 +486,8 @@ Parser.prototype.parsePrimaryExpression = function () {
         return this.parseFunctionalCast();
       }
       if (tok.value === 'this') {
-        this.fail('invalid use of \'this\' outside of a non-static member function');
+        this.next();
+        return this.sema.actOnThis(this.rangeOf(tok), false);
       }
       break;
     case TokenKind.PUNCT:

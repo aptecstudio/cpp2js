@@ -253,6 +253,24 @@ Sema.prototype.checkModifiable = function (expr, range) {
     this.error('array type ' + this.quote(expr.type) + ' is not assignable', expr.range);
     return false;
   }
+  if (expr.type.isConst && expr.kind === 'MemberExpr' && expr.object &&
+      expr.object.kind === 'ThisExpr' && !expr.member.type.isConst) {
+    this.error('cannot assign to non-static data member within const member function \'' +
+      this.currentFunction().name + '\'', expr.range);
+    return false;
+  }
+  if (expr.type.isConst && expr.kind === 'MemberExpr' && !expr.member.type.isConst) {
+    decl = rootVariable(expr);
+    this.error(decl ? 'cannot assign to variable \'' + decl.name +
+      '\' with const-qualified type ' + this.quote(decl.type) :
+      'read-only variable is not assignable', expr.range);
+    return false;
+  }
+  if (expr.type.isConst && expr.kind === 'MemberExpr') {
+    this.error('cannot assign to non-static data member \'' + expr.member.name +
+      '\' with const-qualified type ' + this.quote(expr.member.type), expr.range);
+    return false;
+  }
   if (expr.type.isConst) {
     decl = expr.kind === 'DeclRefExpr' ? expr.decl : null;
     this.error(decl ? 'cannot assign to variable \'' + decl.name +
@@ -262,6 +280,14 @@ Sema.prototype.checkModifiable = function (expr, range) {
   }
   return true;
 };
+
+/** Variable at the root of a chain of `.` member accesses. */
+function rootVariable(expr) {
+  while (expr.kind === 'MemberExpr' && !expr.isArrow && expr.object) {
+    expr = expr.object;
+  }
+  return expr.kind === 'DeclRefExpr' ? expr.decl : null;
+}
 
 // ---------------------------------------------------------------------------
 // Constant expressions.
@@ -303,10 +329,14 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
     return null;
   }
   decl = result.decls[0];
+  if (decl.kind === 'FieldDecl' || (decl.kind === 'FunctionDecl' && decl.isMethod &&
+      !decl.isStatic)) {
+    return this.implicitMemberAccess(result.decls, range, qualifier &&
+      qualifier.kind === 'RecordDecl' ? qualifier : null);
+  }
   switch (decl.kind) {
     case 'VarDecl':
     case 'ParamDecl':
-    case 'FieldDecl':
       node = this._expr('DeclRefExpr', range, { decl: decl }, T.removeReference(decl.type),
         'lvalue');
       break;
@@ -873,6 +903,9 @@ Sema.prototype.actOnCall = function (callee, args, range) {
   if (!callee || args.indexOf(null) !== -1) {
     return null;
   }
+  if (callee.kind === 'MemberExpr' && callee.candidates) {
+    return this.actOnMemberCall(callee, args, range);
+  }
   if (callee.kind === 'DeclRefExpr' && callee.candidates) {
     target = this.resolveOverload(callee.candidates, args, range, callee.decl.name);
     if (!target) {
@@ -1275,6 +1308,14 @@ Sema.prototype.initialize = function (type, init, style, context) {
   if (T.isArray(type)) {
     return this._arrayInit(type, init);
   }
+  if (T.isRecord(type) && init.kind === 'InitListExpr' && style !== 'direct') {
+    if (!this.isAggregate(type.decl)) {
+      this.error('initialization of non-aggregate type ' + this.quote(type) + ' with an ' +
+        'initializer list requires a constructor', init.range);
+      return null;
+    }
+    return wrap(this.aggregateInit(type.unqualified, init), type);
+  }
   if (init.kind === 'InitListExpr' && style !== 'direct') {
     return wrap(this._scalarListInit(init, type), type);
   }
@@ -1496,7 +1537,7 @@ Sema.prototype.actOnVariableInit = function (decl, init, style) {
 /**
  * `return expr;` with conversion to the return type (replaces step 1).
  */
-Sema.prototype.actOnReturnStatement = function (value, range) {
+Sema.prototype.actOnReturnStatement = function (value, range, hadValue) {
   var fn = this.currentFunction();
   var returnType;
   var converted = value;
@@ -1510,7 +1551,10 @@ Sema.prototype.actOnReturnStatement = function (value, range) {
       this.error('void function \'' + fn.name + '\' should not return a value', range);
     }
   } else if (!value) {
-    this.error('non-void function \'' + fn.name + '\' should return a value', range);
+    // A value that failed to parse or type-check was already reported.
+    if (!hadValue) {
+      this.error('non-void function \'' + fn.name + '\' should return a value', range);
+    }
   } else {
     result = this.initialize(returnType, value, value.kind === 'InitListExpr' ? 'list' :
       'copy', 'return');

@@ -65,6 +65,7 @@ Parser.prototype.parseScopedStatement = function () {
 Parser.prototype.parseStatement = function () {
   var tok = this.peek();
   var value;
+  var hadValue;
   if (this.isPunct('{')) {
     return this.parseCompoundStatement(true);
   }
@@ -102,10 +103,11 @@ Parser.prototype.parseStatement = function () {
         return this.parseGotoStatement();
       case 'return':
         this.next();
-        value = this.isPunct(';') ? null :
+        hadValue = !this.isPunct(';');
+        value = !hadValue ? null :
           this.isPunct('{') ? this.parseBracedInitList() : this.parseExpression();
         this.expectPunct(';', 'after return statement');
-        return this.sema.actOnReturnStatement(value, this.rangeFrom(tok));
+        return this.sema.actOnReturnStatement(value, this.rangeFrom(tok), hadValue);
       case 'try':
       case 'catch':
         this.fail('exceptions are not supported yet');
