@@ -642,6 +642,38 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: approximating using-directives by injecting names into
   the scope that contains the directive (wrong in the ambiguous case).
 
+### D-042 — Parser structure and declarators
+
+- **Status**: Accepted (agent, 2026-11-19; owner approved the step order).
+- **Decision**:
+  - `src/parser/parser.js` (tokens, recovery, declarations) is extended by
+    `parse-expr.js` and `parse-stmt.js` on `Parser.prototype`;
+    `src/semantic/sema.js` holds the semantic actions it calls;
+    `src/ast/dump.js` prints the AST like `clang -ast-dump` for tests;
+  - a **declarator** is parsed into `{ptrOps, name, nested, suffixes}` and
+    turned into a type by `Sema.typeFromDeclarator`: pointer operators
+    apply left to right, array/function suffixes right to left, a nested
+    declarator last (C++11 8.3). Invalid compositions (arrays of
+    references, functions returning arrays, references to `void`, ...)
+    are reported with Clang's wording;
+  - **disambiguation**: after a named declarator, `(` starts parameters
+    only if followed by `)`, `...` or something that can begin a
+    declaration (`int b(2);` is a variable, `int f(int);` a function, as
+    C++11 8.2/1 requires); in abstract declarators `(` followed by a
+    decl-specifier, `)` or `...` is a parameter list (8.2/7);
+  - **recovery**: a `ParseError` abandons the current declaration or
+    statement; the parser skips to `;` or the closing `}` at the same
+    depth. Missing tokens at the end of a line are reported after the
+    previous token, as Clang does;
+  - **redeclarations**: functions chain to their most recent matching
+    declaration (`previous`); default arguments merge; variables may be
+    redeclared only with `extern` at namespace scope; typedefs may repeat
+    with the same type; literal types follow C++11 table 6 with ILP32.
+- **Reason**: the declarator model mirrors the grammar and keeps type
+  construction in one place; Clang's messages are familiar.
+- **Discarded**: building types while parsing declarators (hard to get the
+  inside-out order right with nested declarators).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -819,9 +851,9 @@ cpp2js/
 │   ├── source/              # Source files, positions, line/column mapping (D-023)
 │   ├── preprocessor/        # pp-lexer, expression (#if), preprocessor (D-033)
 │   ├── lexer/               # lexer.js (pp-tokens -> C++ tokens), literals.js (D-034)
-│   ├── parser/              # Recursive-descent parser -> AST
-│   ├── ast/                 # AST node definitions and visitors
-│   ├── semantic/            # Scopes, symbols, name lookup, type checker, access control
+│   ├── parser/              # parser.js, parse-expr.js, parse-stmt.js (D-042)
+│   ├── ast/                 # nodes.js (D-040), dump.js (D-042)
+│   ├── semantic/            # types.js, scope.js, sema.js (D-039, D-041, D-042)
 │   ├── lowering/            # C++ AST -> JS-oriented intermediate representation
 │   ├── codegen/             # IR -> JavaScript AST for ES5 / ES6
 │   ├── printer/             # Pretty printer and minifier

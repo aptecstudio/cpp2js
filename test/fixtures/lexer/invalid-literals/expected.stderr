@@ -10,4 +10,13 @@ main.cpp:6:10: error: invalid suffix '.15' on floating constant
 main.cpp:1:12: note: expanded from macro 'PI'
 #define PI 3.14.15
            ^~~~~~~
-3 errors generated.
+main.cpp:4:14: error: expected expression
+  int a = 089;
+             ^
+main.cpp:5:13: error: expected expression
+  char c = @;
+            ^
+main.cpp:6:3: error: non-void function 'main' should return a value
+  return PI;
+  ^~~~~~~~~~
+6 errors generated.

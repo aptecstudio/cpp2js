@@ -1,0 +1,16 @@
+main.cpp:4:8: error: functions that differ only in their return type cannot be overloaded
+double count(const char *text, size_type length);
+       ^~~~~
+main.cpp:3:5: note: previous declaration is here
+int count(const char *text, size_type length);
+    ^~~~~
+main.cpp:8:7: error: redefinition of 'total'
+  int total = 1;
+      ^~~~~
+main.cpp:7:7: note: previous definition is here
+  int total = 0;
+      ^~~~~
+main.cpp:9:3: error: non-void function 'main' should return a value
+  return;
+  ^~~~~~~
+3 errors generated.

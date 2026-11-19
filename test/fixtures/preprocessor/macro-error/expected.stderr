@@ -4,4 +4,7 @@ main.cpp:4:10: error: too many arguments provided to function-like macro invocat
 main.cpp:1:9: note: macro 'SQUARE' defined here
 #define SQUARE(x) ((x) * (x))
         ^~~~~~
-1 error generated.
+main.cpp:4:3: error: non-void function 'main' should return a value
+  return SQUARE(2, 3);
+  ^~~~~~~~~~~~~~~~~~~~
+2 errors generated.

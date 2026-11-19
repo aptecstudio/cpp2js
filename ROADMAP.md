@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 1 / 13   |
+| 5   | Parser and AST                          | In progress  | 2 / 13   |
 | 6   | Semantic analysis                       | In progress  | 3 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 51 / 124 items done.**
+**Overall: 52 / 124 items done.**
 
 ---
 
@@ -106,7 +106,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 (D-035).
 
 - [x] AST node definitions and visitor utilities (D-040).
-- [ ] Declarations: variables, functions, typedefs, `using`.
+- [x] Declarations: variables, functions, typedefs, `using` aliases (D-042); using-declarations
+  and directives come with namespaces.
 - [ ] Namespaces.
 - [ ] Classes and structs: members, access specifiers, constructors, destructors.
 - [ ] Inheritance (single; multiple if in scope).
@@ -235,4 +236,5 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Decisions D-035 (parser and semantics interleaved), D-036 (ILP32 data
   model), D-037 (UTF-8 byte strings), D-038 (phase-by-phase strategy).
 - **2026-11-19** — Phase 6 started: type representation (D-039). Phase 5 started: AST nodes
-  (D-040). Scopes and name lookup (D-041).
+  (D-040). Scopes and name lookup (D-041). Parser step 1: declarations and declarators
+  (D-042).

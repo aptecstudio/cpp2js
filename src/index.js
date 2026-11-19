@@ -3,9 +3,10 @@
 /**
  * Programmatic API of cpp2js.
  *
- * Pipeline status: inputs are loaded, preprocessed (Phase 3) and lexed
- * (Phase 4); the following phases are not implemented yet, so a successful
- * run ends with an error saying so. The signature and result shape are the
+ * Pipeline status: inputs are loaded, preprocessed (Phase 3), lexed
+ * (Phase 4) and parsed with semantic analysis (Phases 5-6, in progress);
+ * code generation is not implemented yet, so a successful run ends with
+ * an error saying so. The signature and result shape are the
  * ones the phases will fill in.
  */
 
@@ -14,6 +15,7 @@ var SourceFile = require('./source/source-file');
 var DiagnosticBag = require('./diagnostics/diagnostic-bag');
 var Preprocessor = require('./preprocessor/preprocessor').Preprocessor;
 var Lexer = require('./lexer/lexer').Lexer;
+var Parser = require('./parser/parser').Parser;
 
 /**
  * Reads a file as UTF-8 text (default `readFile` of `compile`).
@@ -39,7 +41,7 @@ function readFileUtf8(file) {
  * @returns {{success: boolean, diagnostics: DiagnosticBag,
  *   sources: Array.<SourceFile>, units: Array.<{source: SourceFile,
  *   tokens: Array.<Object>}>, files: Array.<{path: ?string, contents: string}>}}
- *   `units` holds the C++ tokens of each translation unit.
+ *   `units` holds the tokens and the AST of each translation unit.
  *   `files` lists the outputs to write (none with `check`); a null path
  *   means standard output.
  */
@@ -52,6 +54,7 @@ function compile(options) {
   var sources = [];
   var units = [];
   var result;
+  var tokens;
   var i;
 
   for (i = 0; i < options.inputs.length; i++) {
@@ -74,9 +77,11 @@ function compile(options) {
       target: options.target,
       platform: options.platform
     }).run(sources[i]);
+    tokens = new Lexer(diagnostics).lex(result.tokens, sources[i]);
     units.push({
       source: sources[i],
-      tokens: new Lexer(diagnostics).lex(result.tokens, sources[i])
+      tokens: tokens,
+      ast: new Parser(tokens, diagnostics, sources[i]).parseTranslationUnit()
     });
   }
 
