@@ -32,8 +32,9 @@ function readFileUtf8(file) {
  *   defaults to `fs.readFileSync` in UTF-8. Lets callers and tests supply
  *   sources without touching the disk.
  * @returns {{success: boolean, diagnostics: DiagnosticBag,
- *   sources: Array.<SourceFile>, files: Array.<{path: string, contents: string}>}}
- *   `files` lists the outputs to write (none with `check`).
+ *   sources: Array.<SourceFile>, files: Array.<{path: ?string, contents: string}>}}
+ *   `files` lists the outputs to write (none with `check`); a null path
+ *   means standard output.
  */
 function compile(options) {
   var diagnostics = new DiagnosticBag({

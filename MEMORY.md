@@ -345,6 +345,34 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   (D-013); the second build overwrites the first. To be solved in Phase 9-10
   (see section 5).
 
+### D-029 — Fixture-based end-to-end tests
+
+- **Status**: Accepted (owner chose the task, 2026-11-19; format by agent).
+- **Decision**: `test/fixtures.test.js` turns every directory under
+  `test/fixtures/` that contains `.cpp` files or an `args` file into one
+  test case, named after its path (`<group>/<name>`). Layout:
+  - inputs (`*.cpp`, headers): paths in diagnostics are relative to the
+    fixture directory, so expectations do not depend on the machine;
+  - `args`: CLI arguments, one per line (no shell quoting); default is
+    every `.cpp` file, sorted, followed by `-o out.js`;
+  - `expected/`: the files the build must write, at their relative path
+    (the exact set is checked);
+  - `expected.stdout`, `expected.stderr` (default empty), `expected.exit`
+    (default `0`).
+  The CLI runs in memory through `cli.run()` with injected `readFile` and
+  `writeFile`; nothing is written to disk. `CPP2JS_UPDATE_FIXTURES=1 npm
+  test` rewrites the expectations from the actual results; the diff must
+  then be reviewed before committing.
+- **Reason**: a compiler is best tested on whole programs; going through the
+  CLI covers argument handling, diagnostics and outputs together, and the
+  update mode keeps large expected outputs maintainable.
+- **Discarded**: one JSON file per case (awkward for multi-line C++ and JS);
+  spawning `bin/cpp2js.js` (`child_process.spawnSync` is not in Node 0.10,
+  and an in-memory run is faster).
+- **Related**: `src/cli/main.js` now writes `compile()` outputs through
+  `io.writeFile` (default `fs.writeFileSync`); an output with a null path is
+  the bundle on standard output.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -489,9 +517,10 @@ cpp2js/
 │       └── platform/        # Context layer: browser, node, mixed (Electron)
 ├── test/                    # Unit tests (no external test framework)
 │   ├── run.js               # Test runner (D-022)
+│   ├── fixtures.test.js     # Fixture runner (D-029)
 │   ├── harness.js           # test(name, fn) registry
 │   ├── tools/               # Test helpers (es5-check.js, D-024)
-│   └── fixtures/            # C++ inputs and expected JS outputs
+│   └── fixtures/            # <group>/<name>/: inputs, args, expected* (D-029)
 ├── examples/                # Sample C++ programs
 ├── .editorconfig            # Mirrors the conventions of section 3.1
 ├── .gitignore

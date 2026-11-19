@@ -1,0 +1,2 @@
+cpp2js: error: when writing to standard output the standard library needs '--std-out <file>' or '--embed-std'
+Try 'cpp2js --help' for more information.

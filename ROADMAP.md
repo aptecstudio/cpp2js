@@ -16,7 +16,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
 | 1   | Scope definition                        | In progress  | 13 / 15  |
-| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 6 / 9    |
+| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 9    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 7    |
 | 5   | Parser and AST                          | Not started  | 0 / 12   |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 13   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 27 / 119 items done.**
+**Overall: 28 / 119 items done.**
 
 ---
 
@@ -66,13 +66,13 @@ Decisions to take with the owner before writing the compiler core.
 
 - [x] CLI entry point `bin/cpp2js.js` with argument parser (no libraries) (D-028).
 - [x] `--help` and `--version`; usage errors and checks of D-021 (exit code 2).
-- [~] Programmatic API `compile(options)` in `src/index.js` (loads inputs; phases missing;
-  output writing and `--verbose` still to do).
+- [~] Programmatic API `compile(options)` in `src/index.js` (loads inputs, CLI writes its
+  outputs; phases and `--verbose` still to do).
 - [x] Source file abstraction with line/column mapping (`src/source/source-file.js`).
 - [x] Diagnostics: errors, warnings, notes; compiler-style formatting (D-023).
 - [x] Minimal in-house test runner (`npm test`), no external framework (D-022).
 - [x] Automatic ES5 check of the project's own sources, run by `npm test` (D-024).
-- [ ] Fixture-based tests (C++ input -> expected JS output).
+- [x] Fixture-based tests (C++ input -> expected JS output) (D-029).
 - [ ] Continuous integration workflow running the test suite.
 
 ## Phase 3 — Preprocessor
@@ -212,3 +212,4 @@ Decisions to take with the owner before writing the compiler core.
   their design, items added to Phases 4-8 and 10. Overall count corrected to 25 done.
 - **2026-11-19** — CLI done (D-028: `stdlib.js` default, stdout rule, conflicts, syntax);
   `compile()` started. Next: fixture-based tests, then CI.
+- **2026-11-19** — Fixture-based tests (D-029) with three CLI/pipeline fixtures. Next: CI.

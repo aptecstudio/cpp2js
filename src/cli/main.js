@@ -1,5 +1,6 @@
 'use strict';
 
+var fs = require('fs');
 var parseArgs = require('./parse-args').parseArgs;
 var validateOptions = require('./validate-options').validateOptions;
 var help = require('./help');
@@ -32,12 +33,36 @@ function printDiagnostics(bag, quiet, write) {
 }
 
 /**
+ * Writes the compilation outputs.
+ *
+ * @param {Array.<{path: ?string, contents: string}>} files
+ * @param {Object} io See `run`.
+ * @returns {void}
+ */
+function writeOutputs(files, io) {
+  var writeFile = io.writeFile || function (file, contents) {
+    fs.writeFileSync(file, contents);
+  };
+  var i;
+  for (i = 0; i < files.length; i++) {
+    if (files[i].path === null) {
+      io.stdout(files[i].contents);
+    } else {
+      writeFile(files[i].path, files[i].contents);
+    }
+  }
+}
+
+/**
  * Runs the command-line interface.
  *
  * @param {Array.<string>} args Arguments (`process.argv.slice(2)`).
  * @param {{stdout: function(string), stderr: function(string),
- *          readFile: (function(string): string|undefined)}} io
- *   Output writers; diagnostics always go to `stderr` (D-021).
+ *          readFile: (function(string): string|undefined),
+ *          writeFile: (function(string, string)|undefined)}} io
+ *   Output writers; diagnostics always go to `stderr` (D-021). `readFile`
+ *   and `writeFile` default to the file system; tests replace them.
+ *   Output files with a null path are the bundle written to `stdout`.
  * @returns {number} Exit code: 0 success, 1 compilation errors, 2 usage.
  */
 function run(args, io) {
@@ -83,6 +108,9 @@ function run(args, io) {
   }
   result = compiler.compile(options);
   printDiagnostics(result.diagnostics, options.quiet, io.stderr);
+  if (result.success) {
+    writeOutputs(result.files, io);
+  }
   if (!options.quiet) {
     io.stderr(format.formatSummary(result.diagnostics.errorCount,
       result.diagnostics.warningCount));
