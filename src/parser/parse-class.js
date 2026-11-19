@@ -16,6 +16,30 @@ var T = require('../semantic/types');
 var ACCESS_WORDS = { 'public': true, 'protected': true, 'private': true };
 
 /**
+ * Whether a declarator declares a function (not a pointer to one): the
+ * innermost declarator holding the name decides; suffixes bind tighter
+ * than pointer operators, and an empty level defers to the enclosing one.
+ */
+function isFunctionDeclarator(declarator) {
+  var chain = [];
+  var d = declarator;
+  var i;
+  while (d) {
+    chain.push(d);
+    d = d.nested;
+  }
+  for (i = chain.length - 1; i >= 0; i--) {
+    if (chain[i].suffixes.length) {
+      return chain[i].suffixes[0].kind === 'function';
+    }
+    if (chain[i].ptrOps.length) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
  * class-specifier or elaborated class reference inside a
  * decl-specifier-seq. A definition or declaration is recorded in
  * `spec.tagDecl`.
@@ -67,16 +91,71 @@ Parser.prototype.parseClassSpecifier = function (spec) {
   if (form === 'definition') {
     decl.isFinal = isFinal;
     if (this.isPunct(':')) {
-      this.parseBaseClause(decl);
+      this.withRecoveryUntilBrace(function () {
+        this.parseBaseClause(decl);
+      });
     }
     this.parseClassBody(decl);
   }
   return this.sema.types.record(decl);
 };
 
-/** Base classes come in step 5d. */
-Parser.prototype.parseBaseClause = function () {
-  this.fail('base classes are not supported yet');
+/** `: [virtual] [access] class-name, ...` (C++11 10). */
+Parser.prototype.parseBaseClause = function (record) {
+  var access;
+  var isVirtual;
+  var start;
+  var scan;
+  this.next();
+  for (;;) {
+    access = null;
+    isVirtual = false;
+    start = this.peek();
+    for (;;) {
+      if (this.acceptKeyword('virtual')) {
+        isVirtual = true;
+      } else if (this.peek().kind === TokenKind.KEYWORD && ACCESS_WORDS[this.peek().value] &&
+          !access) {
+        access = this.next().value;
+      } else {
+        break;
+      }
+    }
+    scan = this._scanQualifiedName(0);
+    if (!scan || scan.error || scan.info.kind !== 'type') {
+      this.fail(scan && scan.info.kind === 'unknown' ? 'unknown class name \'' + scan.name +
+        '\'' : 'expected class name');
+    }
+    this._skip(scan.length);
+    this.sema.actOnBaseSpecifier(record, scan.info.type, access, isVirtual,
+      this.rangeFrom(start));
+    if (!this.acceptPunct(',')) {
+      break;
+    }
+  }
+};
+
+/** `override`, `final` and `= 0` after a member function declarator. */
+Parser.prototype._parseVirtSpecifiers = function () {
+  var specs = { override: false, 'final': false, pure: false };
+  var tok;
+  for (;;) {
+    tok = this.peek();
+    if (tok.kind === TokenKind.IDENTIFIER && (tok.value === 'override' ||
+        tok.value === 'final')) {
+      this.next();
+      specs[tok.value] = true;
+    } else {
+      break;
+    }
+  }
+  if (this.isPunct('=') && this.peek(1).kind === TokenKind.INTEGER &&
+      this.peek(1).text === '0') {
+    this.next();
+    this.next();
+    specs.pure = true;
+  }
+  return specs;
 };
 
 /** `{ member-specification }` */
@@ -135,6 +214,7 @@ Parser.prototype.parseMemberDeclaration = function (record) {
   var declarator;
   var decl;
   var bitWidth;
+  var virt;
   var first = true;
   if (tok.kind === TokenKind.KEYWORD && ACCESS_WORDS[tok.value] && this.isPunct(':', 1)) {
     this.next();
@@ -185,7 +265,9 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     if (this.acceptPunct(':')) {
       bitWidth = this.parseConstantExpression();
     }
-    decl = this.sema.actOnMemberDeclarator(spec, declarator, bitWidth);
+    // `= 0` is a pure-specifier only after a function declarator.
+    virt = isFunctionDeclarator(declarator) ? this._parseVirtSpecifiers() : {};
+    decl = this.sema.actOnMemberDeclarator(spec, declarator, bitWidth, virt);
     if (decl && decl.kind === 'FunctionDecl' && this.isPunct('{') && first) {
       // Parsed when the outermost class is complete.
       this._delayedBodies.push({ decl: decl, pos: this._pos });
@@ -277,7 +359,9 @@ Parser.prototype._constructorDeclarator = function () {
 Parser.prototype._parseConstructorMember = function (record) {
   var spec = this._parseConstructorSpecifiers();
   var parsed = this._constructorDeclarator();
-  var decl = this.sema.actOnConstructorDeclarator(record, spec, parsed.declarator, parsed.kind);
+  var virt = this._parseVirtSpecifiers();
+  var decl = this.sema.actOnConstructorDeclarator(record, spec, parsed.declarator, parsed.kind,
+    virt);
   if (this.isPunct('=') && (this.isKeyword('default', 1) || this.isKeyword('delete', 1))) {
     this.next();
     this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',

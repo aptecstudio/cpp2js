@@ -29,7 +29,7 @@ var Sema = require('./sema').Sema;
  * @param {string} kind 'constructor' or 'destructor'.
  * @returns {?Object} FunctionDecl.
  */
-Sema.prototype.actOnConstructorDeclarator = function (record, spec, declarator, kind) {
+Sema.prototype.actOnConstructorDeclarator = function (record, spec, declarator, kind, virt) {
   var suffix = declarator.suffixes[0];
   var type;
   var decl;
@@ -91,8 +91,13 @@ Sema.prototype.actOnConstructorDeclarator = function (record, spec, declarator, 
   }
   if (kind === 'destructor') {
     record.destructor = decl;
+    this.checkOverrides(decl, record, virt || {});
   } else {
     record.constructors = (record.constructors || []).concat([decl]);
+    if (virt && (virt.override || virt['final'] || virt.pure)) {
+      this.error('constructor cannot be declared \'' + (virt.pure ? 'pure' : virt.override ?
+        'override' : 'final') + '\'', declarator.range);
+    }
   }
   record.members.push(decl);
   return decl;
@@ -219,7 +224,9 @@ Sema.prototype.declareImplicitMembers = function (record) {
   });
   var self = this;
   var has = { copy: false, move: false, 'copy-assign': false, 'move-assign': false };
-  var fields = record.members.filter(function (m) { return m.kind === 'FieldDecl'; });
+  // Base subobjects take part like members of their class type.
+  var fields = record.members.filter(function (m) { return m.kind === 'FieldDecl'; })
+    .concat((record.bases || []).map(function (b) { return { type: b.type, init: null }; }));
   var decl;
   var userMove;
   var noImplicitMove;
@@ -258,7 +265,9 @@ Sema.prototype.declareImplicitMembers = function (record) {
     decl.isDeleted = this._assignDeleted(fields);
   }
   if (!record.destructor) {
-    this._implicitMember(record, 'destructor', 'destructor', this.types.builtin('void'), []);
+    decl = this._implicitMember(record, 'destructor', 'destructor',
+      this.types.builtin('void'), []);
+    this.checkOverrides(decl, record, {});
   }
 };
 
@@ -378,6 +387,10 @@ Sema.prototype.actOnMemberInitializer = function (ctor, name, args, style, range
   var i;
   var diag;
   var node;
+  node = this.baseInitializer(ctor, name, args, style, range);
+  if (node) {
+    return node;
+  }
   if (name === record.name) {
     // Delegating constructor (C++11 12.6.2/6).
     if (ctor.ctorInits.length) {
@@ -459,6 +472,7 @@ Sema.prototype.actOnFinishMemberInitializers = function (ctor) {
   if (ctor.ctorInits.some(function (i) { return i.isDelegating; })) {
     return;
   }
+  this.checkBaseInitializers(ctor);
   record.members.forEach(function (f) {
     if (f.kind !== 'FieldDecl' || f.init || initialized.indexOf(f) !== -1) {
       return;
@@ -499,6 +513,10 @@ Sema.prototype.construct = function (type, args, style, range) {
   var list;
   if (!record.complete) {
     this.error('variable has incomplete type ' + this.quote(type), range);
+    return null;
+  }
+  if (record.isAbstract && !this._constructingSubobject && !this.checkNotAbstract(type,
+      range, this._constructionContext || 'new')) {
     return null;
   }
   if ((style === 'list' || style === 'copy-list') && this.isAggregate(record)) {

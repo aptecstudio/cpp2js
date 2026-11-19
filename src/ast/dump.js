@@ -74,6 +74,18 @@ function describe(node) {
       if (node.isExplicit) {
         parts.push('explicit');
       }
+      if (node.isVirtual) {
+        parts.push('virtual');
+      }
+      if (node.isPure) {
+        parts.push('pure');
+      }
+      if (node.isOverride) {
+        parts.push('override');
+      }
+      if (node.isFinal) {
+        parts.push('final');
+      }
       if (node.isDeleted) {
         parts.push('deleted');
       }
@@ -85,7 +97,8 @@ function describe(node) {
       }
       break;
     case 'CtorInitializer':
-      parts.push(node.isDelegating ? '<delegating>' : node.member.name);
+      parts.push(node.isDelegating ? '<delegating>' : node.base ?
+        'base ' + T.typeToString(node.base.type) : node.member.name);
       break;
     case 'ConstructExpr':
       parts.push(quote(node.type), node.valueCategory, quote(node.constructorDecl.type),
@@ -138,9 +151,24 @@ function describe(node) {
       parts.push(node.tag, node.name || '<anonymous>');
       if (node.complete) {
         parts.push('size=' + node.size, 'align=' + node.align);
+        if (node.isPolymorphic) {
+          parts.push('polymorphic');
+        }
+        if (node.isAbstract) {
+          parts.push('abstract');
+        }
       } else {
         parts.push('incomplete');
       }
+      break;
+    case 'CallExpr':
+      parts.push(quote(node.type), node.valueCategory);
+      if (node.isVirtualCall) {
+        parts.push('virtual');
+      }
+      break;
+    case 'BaseSpecifier':
+      parts.push(node.access, T.typeToString(node.type));
       break;
     case 'MemberExpr':
       parts.push((node.isArrow ? '->' : '.') + node.member.name, quote(node.type),

@@ -908,6 +908,41 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   through constructors in function arguments (5e), destructor calls at
   scope exit (generated in Phase 7).
 
+### D-052 — Inheritance and virtual functions
+
+- **Status**: Accepted (agent, 2026-11-19; part of step 5d approved by the
+  owner).
+- **Decision**: `src/semantic/sema-inherit.js` with hooks in classes,
+  conversions and casts:
+  - **single inheritance** with `public`/`protected`/`private` bases
+    (default private for `class`, public for `struct`); multiple and
+    virtual bases are parsed and rejected with "not supported yet"
+    (D-010); final classes, unions and incomplete classes cannot be bases;
+  - **access through inheritance** (11.2): the access of a member named in
+    a derived class is the more restrictive of its own and the
+    inheritance access, private members of bases are inaccessible;
+    Clang's `constrained by private inheritance here` note; inaccessible
+    bases block derived-to-base conversions;
+  - **conversions**: `D*` to `B*`, `D&` to `B&` (rank Conversion,
+    `DerivedToBase` casts), slicing copies through the base copy
+    constructor; a closer base beats a farther one and any base beats
+    `void *` (13.3.3.2/4); `static_cast` down (`BaseToDerived`);
+  - **virtual functions**: `virtual`, implicit virtual on overriders,
+    `override` and `final` (contextual keywords), pure `= 0`, virtual
+    destructors inherited by derived destructors (also implicit ones),
+    covariant return types; calls through a non-qualified member are
+    marked `isVirtualCall`, `Base::f()` is a direct call;
+  - **abstract classes**: no variables, `new`, or fields of them; Clang's
+    notes list the unimplemented pure methods; abstract bases are still
+    constructed as subobjects;
+  - **layout**: the base subobject first (empty bases take no space); a
+    class introducing virtual functions starts with a 4-byte vtable
+    pointer; base initializers in constructors, required when the base
+    has no default constructor.
+- **Reason**: C++11 clauses 10-11 with Clang's diagnostics.
+- **Discarded for now**: multiple inheritance, virtual bases,
+  `dynamic_cast` (planned after the core, D-010).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

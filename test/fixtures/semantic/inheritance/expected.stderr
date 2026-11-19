@@ -1,0 +1,13 @@
+main.cpp:16:7: error: 'legs' marked 'override' but does not override any member functions
+  int legs() override { return 2; }
+      ^~~~
+main.cpp:23:10: error: variable type 'Animal' is an abstract class
+  Animal generic;
+         ^~~~~~~
+main.cpp:4:23: note: unimplemented pure virtual method 'sound' in 'Animal'
+  virtual const char *sound() const = 0;
+                      ^~~~~
+main.cpp:26:20: error: cannot cast 'Secret' to its private base class 'Animal'
+  Animal *hidden = &s;
+                   ^~
+3 errors generated.

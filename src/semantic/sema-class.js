@@ -104,6 +104,7 @@ Sema.prototype.actOnFinishClassBody = function (decl) {
   this.scope = decl.scope.parent;
   this._layout(decl);
   decl.complete = true;
+  decl.isAbstract = this.pureFunctions(decl).length > 0;
   delete decl.access;
   this.declareImplicitMembers(decl);
 };
@@ -124,7 +125,7 @@ Sema.prototype.currentClass = function () {
  * @param {?Object} bitWidth Bit-field width expression.
  * @returns {?Object} FieldDecl or FunctionDecl.
  */
-Sema.prototype.actOnMemberDeclarator = function (spec, declarator, bitWidth) {
+Sema.prototype.actOnMemberDeclarator = function (spec, declarator, bitWidth, virt) {
   var record = this.currentClass();
   var base = this.typeFromSpecifiers(spec);
   var type = this.typeFromDeclarator(base, declarator);
@@ -155,11 +156,23 @@ Sema.prototype.actOnMemberDeclarator = function (spec, declarator, bitWidth) {
     decl.storage = '';
     decl.access = record.access;
     decl.parent = record;
+    decl.isVirtual = !!spec.isVirtual;
+    if (decl.isVirtual && decl.isStatic) {
+      this.error('\'virtual\' can only appear on non-static member functions',
+        declarator.range);
+      decl.isVirtual = false;
+    }
+    this.checkOverrides(decl, record, virt || {});
     if (decl.isStatic && (type.methodConst || type.methodVolatile)) {
       this.error('static member function cannot have \'const\' qualifier', declarator.range);
     }
     record.members.push(decl);
     return decl;
+  }
+  if (virt && (virt.override || virt['final'] || virt.pure)) {
+    this.error(virt.pure ? 'initializer on function does not look like a pure-specifier' :
+      'only virtual member functions can be marked \'' + (virt.override ? 'override' :
+        'final') + '\'', declarator.range);
   }
   return this._declareField(spec, declarator, type, bitWidth, record);
 };
@@ -180,6 +193,9 @@ Sema.prototype._declareField = function (spec, declarator, type, bitWidth, recor
   if (spec.storage === 'mutable' && (type.isConst || T.isReference(type))) {
     this.error('\'mutable\' cannot be applied to ' + (T.isReference(type) ? 'references' :
       'const members'), declarator.range);
+  }
+  if (T.isRecord(type) && type.decl.complete && this.pureFunctions(type.decl).length) {
+    this.checkNotAbstract(type, declarator.range, 'field');
   }
   if (!T.isComplete(type) && !T.isReference(type) && !(T.isArray(type) &&
       type.size === null)) {
@@ -255,8 +271,9 @@ Sema.prototype.actOnFieldInit = function (field, init, style) {
 // Layout (ILP32, D-036): natural alignment, like wasm32 and Windows 32.
 
 Sema.prototype._layout = function (record) {
-  var offset = 0;
-  var align = 1;
+  var prefix = this.layoutPrefix(record);
+  var offset = prefix.offset;
+  var align = prefix.align;
   var bitOffset = 0;
   var unitSize = 0;
   var unitStart = 0;
@@ -400,6 +417,23 @@ Sema.prototype.actOnMemberAccess = function (object, name, isArrow, range, nameR
     record);
 };
 
+/** The object of a member of a base must be convertible to that base. */
+Sema.prototype._convertObjectToBase = function (object, isArrow, base, range) {
+  var type = isArrow ? object.type.pointee : object.type;
+  if (!T.isRecord(type) || type.decl === base || !this.isDerivedFrom(type.decl, base)) {
+    return true;
+  }
+  if (!this.isAccessibleBase(type.decl, base) && !this._accessContexts().some(function (c) {
+    return c === type.decl;
+  })) {
+    this.error('cannot cast ' + this.quote(type.unqualified) + ' to its ' +
+      this.basePath(type.decl, base)[0].access + ' base class ' +
+      this.quote(this.types.record(base)), range);
+    return false;
+  }
+  return true;
+};
+
 Sema.prototype._isBeingDefined = function (record) {
   var scope = this.scope;
   while (scope) {
@@ -424,6 +458,10 @@ Sema.prototype._buildMemberExpr = function (object, objType, isArrow, decls, ran
   var methods;
   if (member.kind === 'FieldDecl') {
     if (!this.checkAccess(member, namingClass, nameRange)) {
+      return null;
+    }
+    if (object && namingClass !== member.parent && !this._convertObjectToBase(object, isArrow,
+        member.parent, nameRange)) {
       return null;
     }
     if (T.isReference(member.type)) {
@@ -463,6 +501,7 @@ Sema.prototype.implicitMemberAccess = function (decls, range, qualifier) {
   var member = decls[0];
   var self = this.actOnThis(range, true);
   var thisRecord;
+  var result;
   if (!self) {
     if (member.kind === 'FieldDecl') {
       this.error('invalid use of non-static data member \'' + member.name + '\'', range);
@@ -473,8 +512,13 @@ Sema.prototype.implicitMemberAccess = function (decls, range, qualifier) {
       range, qualifier || member.parent);
   }
   thisRecord = self.type.pointee;
-  return this._buildMemberExpr(self, thisRecord, true, decls, range, range,
-    qualifier || member.parent);
+  result = this._buildMemberExpr(self, thisRecord, true, decls, range, range,
+    qualifier || thisRecord.decl);
+  if (result && qualifier) {
+    // `Base::f()` calls exactly that function (no virtual dispatch).
+    result.isQualified = true;
+  }
+  return result;
 };
 
 // ---------------------------------------------------------------------------
@@ -509,8 +553,8 @@ Sema.prototype._accessContexts = function () {
 Sema.prototype.checkAccess = function (member, namingClass, range, message) {
   // `namingClass` matters for access through derived classes (step 5d).
   if (namingClass && namingClass !== member.parent && namingClass.bases &&
-      !this._baseAccessible(namingClass, member)) {
-    return false;
+      namingClass.bases.length) {
+    return this._baseAccessible(namingClass, member, range);
   }
   var contexts;
   var owner = member.parent;
@@ -613,6 +657,7 @@ Sema.prototype._objectConversion = function (method, objType) {
 Sema.prototype.actOnMemberCall = function (callee, args, range) {
   var objType = callee.object ? (callee.isArrow ? callee.object.type.pointee :
     callee.object.type) : null;
+  var call;
   var chosen;
   var converted;
   var method;
@@ -630,12 +675,14 @@ Sema.prototype.actOnMemberCall = function (callee, args, range) {
     return null;
   }
   converted = chosen.args;
-  return this._expr('CallExpr', range, {
+  call = this._expr('CallExpr', range, {
     callee: this._expr('MemberExpr', callee.range, { object: callee.object, member: method,
-      isArrow: callee.isArrow }, method.type, 'prvalue'),
+      isArrow: callee.isArrow, isQualified: !!callee.isQualified }, method.type, 'prvalue'),
     args: converted,
     'function': method
   }, resultTypeOf(method.type.returnType), callCategoryOf(method.type.returnType));
+  call.isVirtualCall = !!method.isVirtual && !callee.isQualified;
+  return call;
 };
 
 function resultTypeOf(type) {

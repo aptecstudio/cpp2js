@@ -161,7 +161,13 @@ function standardStep(sema, from, to, isNull) {
       }
       if (T.isVoid(to.pointee) && T.isObject(from.pointee) && cvIncludes(to.pointee,
           from.pointee)) {
-        return { rank: RANK_CONVERSION, castKind: 'BitCast', isBoolean: false };
+        return { rank: RANK_CONVERSION, castKind: 'BitCast', isBoolean: false, toVoid: true };
+      }
+      if (T.isRecord(from.pointee) && T.isRecord(to.pointee) &&
+          cvIncludes(to.pointee, from.pointee) && sema.isDerivedFrom(from.pointee.decl,
+            to.pointee.decl)) {
+        return { rank: RANK_CONVERSION, castKind: 'DerivedToBase', isBoolean: false,
+          baseDistance: sema.basePath(from.pointee.decl, to.pointee.decl).length };
       }
     }
     return null;
@@ -201,7 +207,8 @@ function nonReferenceConversion(sema, expr, toType) {
     steps.push({ castKind: step.castKind, type: target, valueCategory: 'prvalue' });
   }
   return { kind: 'standard', rank: step.rank, steps: steps, isBoolean: step.isBoolean,
-    target: target, reference: null };
+    target: target, reference: null, baseDistance: step.baseDistance || 0,
+    toVoid: !!step.toVoid };
 }
 
 /**
@@ -210,6 +217,14 @@ function nonReferenceConversion(sema, expr, toType) {
  * an exact match (13.3.3.1/6). User-defined conversions come with step 5e.
  */
 function classConversion(sema, expr, target) {
+  if (T.isRecord(target) && T.isRecord(expr.type) && expr.type.decl !== target.decl &&
+      sema.isDerivedFrom(expr.type.decl, target.decl)) {
+    // Slicing: the base part is copied (a derived-to-base Conversion).
+    return { kind: 'standard', rank: RANK_CONVERSION, steps: [{
+      castKind: 'ConstructorConversion', type: target, valueCategory: 'prvalue' }],
+      isBoolean: false, target: target, reference: null,
+      baseDistance: sema.basePath(expr.type.decl, target.decl).length };
+  }
   if (T.isRecord(target) && T.isRecord(expr.type) &&
       expr.type.unqualified === target.unqualified) {
     if (expr.valueCategory === 'prvalue') {
@@ -272,15 +287,21 @@ function referenceConversion(sema, expr, refType, failure) {
   var isLvalueRef = refType.kind === T.TypeKind.LVALUE_REF;
   var referee = refType.referee;
   var source = expr.type;
-  var related = source.unqualified === referee.unqualified;
+  var derived = T.isRecord(source) && T.isRecord(referee) &&
+    source.decl !== referee.decl && sema.isDerivedFrom(source.decl, referee.decl);
+  var related = source.unqualified === referee.unqualified || derived;
   var compatible = related && cvIncludes(referee, source);
   var inner;
   var steps = [];
   if (isLvalueRef && expr.valueCategory === 'lvalue' && compatible) {
     if (source !== referee) {
-      steps.push({ castKind: 'NoOp', type: referee, valueCategory: 'lvalue' });
+      steps.push({ castKind: derived ? 'DerivedToBase' : 'NoOp', type: referee,
+        valueCategory: 'lvalue' });
     }
-    return { kind: 'standard', rank: RANK_EXACT, steps: steps, isBoolean: false,
+    // Binding to a base class is a Conversion (13.3.3.1.4/1).
+    return { kind: 'standard', rank: derived ? RANK_CONVERSION : RANK_EXACT, steps: steps,
+      isBoolean: false, baseDistance: derived ? sema.basePath(source.decl,
+        referee.decl).length : 0,
       target: refType, reference: { lvalueRef: true, rvalueBinding: false, temporary: false,
         referee: referee } };
   }
@@ -301,8 +322,15 @@ function referenceConversion(sema, expr, refType, failure) {
       ' cannot bind to lvalue of type ' + sema.quote(source);
     return null;
   }
-  if (expr.valueCategory === 'xvalue' && compatible) {
-    return { kind: 'standard', rank: RANK_EXACT, steps: steps, isBoolean: false,
+  if ((expr.valueCategory === 'xvalue' || (T.isRecord(source) &&
+      expr.valueCategory === 'prvalue')) && compatible) {
+    if (source !== referee) {
+      steps.push({ castKind: derived ? 'DerivedToBase' : 'NoOp', type: referee,
+        valueCategory: 'xvalue' });
+    }
+    return { kind: 'standard', rank: derived ? RANK_CONVERSION : RANK_EXACT, steps: steps,
+      isBoolean: false, baseDistance: derived ? sema.basePath(source.decl,
+        referee.decl).length : 0,
       target: refType, reference: { lvalueRef: isLvalueRef, rvalueBinding: true,
         temporary: false, referee: referee } };
   }
@@ -361,6 +389,10 @@ function applyConversion(sema, expr, conversion) {
       }
       continue;
     }
+    if (step.castKind === 'DerivedToBase' && !sema.checkBaseConversion(result.type,
+        step.type, result.range)) {
+      return null;
+    }
     result = sema.implicitCast(result, step.castKind, step.type, step.valueCategory);
   }
   return result;
@@ -404,6 +436,17 @@ function compareConversions(a, b) {
         return 1;
       }
     }
+  }
+  // Converting to a closer base is better (13.3.3.2/4), and to any base
+  // better than to void *.
+  if (a.baseDistance && b.baseDistance && a.baseDistance !== b.baseDistance) {
+    return a.baseDistance < b.baseDistance ? -1 : 1;
+  }
+  if (a.baseDistance && b.toVoid) {
+    return -1;
+  }
+  if (b.baseDistance && a.toVoid) {
+    return 1;
   }
   // Between pointer qualification conversions, fewer qualifiers win.
   if (!a.reference && !b.reference && T.isPointer(a.target) && T.isPointer(b.target) &&

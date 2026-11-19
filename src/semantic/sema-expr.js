@@ -1117,6 +1117,12 @@ Sema.prototype._castConversion = function (kind, type, operand, ignoreConst) {
       return null;
     }
     if (kind === 'static') {
+      if (T.isRecord(operand.type) && T.isRecord(target) &&
+          this.isDerivedFrom(target.decl, operand.type.decl) &&
+          operand.valueCategory === 'lvalue' && (ignoreConst || target.isConst ||
+            !operand.type.isConst)) {
+        return { kind: 'BaseToDerived', operand: operand };
+      }
       if (operand.type.unqualified === target.unqualified &&
           (ignoreConst || (target.isConst || !operand.type.isConst))) {
         return { kind: 'NoOp', operand: operand };
@@ -1150,6 +1156,12 @@ Sema.prototype._castConversion = function (kind, type, operand, ignoreConst) {
     if (T.isPointer(from) && T.isPointer(to) && T.isVoid(from.pointee) &&
         T.isObject(to.pointee) && (ignoreConst || !this._castsAwayConst(from, to))) {
       return { kind: 'BitCast', operand: o };
+    }
+    // Downcast from a base to a derived class (5.2.9/11).
+    if (T.isPointer(from) && T.isPointer(to) && T.isRecord(from.pointee) &&
+        T.isRecord(to.pointee) && this.isDerivedFrom(to.pointee.decl, from.pointee.decl) &&
+        (ignoreConst || !this._castsAwayConst(from, to))) {
+      return { kind: 'BaseToDerived', operand: o };
     }
     if (ignoreConst && T.isPointer(from) && T.isPointer(to) &&
         from.pointee.unqualified === to.pointee.unqualified) {
@@ -1544,7 +1556,12 @@ Sema.prototype.actOnVariableInit = function (decl, init, style) {
         'initializer', decl.range);
     } else if (T.isRecord(decl.type) || (T.isArray(decl.type) &&
         T.isRecord(innermost(decl.type)))) {
-      decl.init = this.defaultConstruct(innermost(decl.type), decl.range);
+      this._constructionContext = 'variable';
+      try {
+        decl.init = this.defaultConstruct(innermost(decl.type), decl.range);
+      } finally {
+        this._constructionContext = null;
+      }
       if (decl.init && T.isArray(decl.type)) {
         // Every element is default-constructed the same way.
         decl.init.isArrayElement = true;
@@ -1562,7 +1579,12 @@ Sema.prototype.actOnVariableInit = function (decl, init, style) {
     this.error('\'extern\' variable cannot have an initializer', decl.range);
     return;
   }
-  result = this.initialize(decl.type, init, style, 'variable');
+  this._constructionContext = 'variable';
+  try {
+    result = this.initialize(decl.type, init, style, 'variable');
+  } finally {
+    this._constructionContext = null;
+  }
   decl.init = result ? result.init : init;
   if (result && result.type !== decl.type) {
     // An array of unknown bound gets its size from the initializer.

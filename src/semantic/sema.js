@@ -1002,3 +1002,4 @@ require('./sema-stmt');
 require('./sema-tag');
 require('./sema-class');
 require('./sema-special');
+require('./sema-inherit');
