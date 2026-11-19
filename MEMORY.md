@@ -565,6 +565,18 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: `std::string` backed by a JavaScript string (fast interop,
   but sizes and indexing differ from C++).
 
+### D-038 — Development strategy: phase by phase
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: the parser and semantic analysis (Phases 5-6, developed
+  together per D-035) cover the whole C++11 subset of D-010 before code
+  generation (Phase 7) starts. Order inside Phases 5-6: type
+  representation, AST nodes, scopes/declarations/lookup, then the parser
+  for declarations, statements and expressions with their semantic checks.
+- **Reason**: owner choice.
+- **Discarded**: a vertical slice (minimal subset carried to runnable JS
+  first, then widened).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

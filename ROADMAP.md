@@ -233,4 +233,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Phase 4 completed: lexer, literal decoding, string concatenation (D-034).
   Next: Phase 5 (parser).
 - **2026-11-19** — Decisions D-035 (parser and semantics interleaved), D-036 (ILP32 data
-  model), D-037 (UTF-8 byte strings).
+  model), D-037 (UTF-8 byte strings), D-038 (phase-by-phase strategy).
