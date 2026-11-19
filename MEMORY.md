@@ -277,7 +277,7 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 | `--minify` | Minified instead of pretty output | off |
 | `--source-map [external\|inline]` | Emit a source map; bare flag means `external` | off |
 | `--embed-std` | Embed the standard library in the bundle (D-013) | off |
-| `--std-out <file>` | Path of the separate standard library file | `<output>.std.js` |
+| `--std-out <file>` | Path of the separate standard library file | ~~`<output>.std.js`~~ `stdlib.js` next to the bundle (D-028) |
 | `-I <dir>` | Add an include search path (repeatable) | — |
 | `-D <name>[=<value>]` | Define a macro (repeatable) | — |
 | `-U <name>` | Undefine a macro (repeatable) | — |
@@ -304,6 +304,46 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   `-w`, `--quiet`, `--verbose`).
 - **Discarded**: `-E` (preprocess only) for now; `a.js` as default output;
   `node` as default platform.
+
+### D-028 — Command-line details: syntax, defaults, conflicts
+
+- **Status**: Accepted (owner, 2026-11-19). Amends D-021 (default of
+  `--std-out`, which is superseded) and completes it.
+- **Decision**:
+  - **standard library file name**: the default is **`stdlib.js` in the same
+    directory as the bundle** (`-o dist/app.js` -> `dist/stdlib.js`), no
+    longer `<output>.std.js`. If it would coincide with the bundle path, it
+    is a usage error;
+  - **standard output without a library destination**: D-021 is applied
+    literally. Without `-o`, `--std-out` or `--embed-std` is always required
+    (even if the program does not use the standard library); otherwise exit
+    code 2. Not required with `--check`, which writes nothing;
+  - **options without effect** (`--std-out` with `--embed-std`; `-o`,
+    `--minify`, `--source-map`, `--embed-std`, `--std-out` with `--check`):
+    a warning, and the compilation goes on. These usage warnings follow
+    `-w`, `-Werror` (then exit 2) and `--quiet` like compiler warnings;
+  - **repeated single-valued options**: the last value wins (as gcc/clang);
+    `-I`, `-D`, `-U` and inputs accumulate; `-D`/`-U` keep their relative
+    order and `-DNAME` means `NAME=1`;
+  - **syntax**: `--opt value` and `--opt=value` for long options; attached
+    values for `-o`, `-I`, `-D`, `-U` (`-Idir`); `--source-map` takes the
+    next argument only if it is `external` or `inline`; `--` ends the
+    options; a lone `-` (stdin) is rejected;
+  - `--help` / `--version` win over every other option, unless an argument
+    cannot be parsed; usage errors end with
+    `Try 'cpp2js --help' for more information.`;
+  - `bin/cpp2js.js` calls `process.exit()` only on failure, so that a bundle
+    written to a pipe is never truncated (stdout may be asynchronous).
+- **Reason**: owner choices for the file name, the stdout rule, conflicts
+  and repeated options; the syntax matches what gcc/clang users expect.
+- **Discarded**: `<output>.std.js` (owner preferred a fixed name shared by
+  the programs of a directory); error only when the library is really used,
+  or automatic embedding on stdout; usage errors for options without effect;
+  errors for repeated options; separate-value syntax only.
+- **Consequence to revisit**: two programs built into the same directory
+  share `stdlib.js`, but each build writes only the parts its program uses
+  (D-013); the second build overwrites the first. To be solved in Phase 9-10
+  (see section 5).
 
 ### D-022 — In-house test runner
 
@@ -431,7 +471,7 @@ cpp2js/
 │   └── cpp2js.js            # CLI entry point (shebang, argument parsing)
 ├── src/
 │   ├── index.js             # Programmatic API: compile(options)
-│   ├── cli/                 # Flag parsing, help text, exit codes
+│   ├── cli/                 # parse-args, validate-options, help, main (D-028)
 │   ├── diagnostics/         # Error/warning objects, formatting, source excerpts (D-023)
 │   ├── source/              # Source files, positions, line/column mapping (D-023)
 │   ├── preprocessor/        # #include, #define, macros, #if/#ifdef, include paths
@@ -557,3 +597,7 @@ To be asked through interactive polls (D-027).
   how JavaScript objects, callbacks and strings are typed on the C++ side;
   what happens when a header is used with an incompatible target/platform
   (error or warning).
+- **Shared `stdlib.js` (D-028)**: programs built into the same directory
+  share the default `stdlib.js`, but each build only writes what its own
+  program uses. Options: merge with the existing file, always emit the
+  parts needed by all builds of a directory, or warn on overwrite.

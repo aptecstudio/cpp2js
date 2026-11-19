@@ -30,10 +30,11 @@ single, self-contained JavaScript bundle targeting **ES5** or **ES6**.
 
 ## Planned usage
 
-The interface below is designed but not implemented yet.
+The command-line interface is in place (`cpp2js --help`); the compilation
+phases behind it are not implemented yet.
 
 ```sh
-# Browser bundle (ES5, readable) plus the separate standard library app.std.js
+# Browser bundle (ES5, readable) plus the separate standard library dist/stdlib.js
 cpp2js main.cpp shape.cpp -I include -o dist/app.js
 
 # Node.js bundle, ES6, minified, with an external source map
@@ -52,12 +53,17 @@ cpp2js main.cpp --check
 | `--minify` | Minified output instead of readable code |
 | `--source-map [external\|inline]` | Generate a source map |
 | `--embed-std` | Put the standard library inside the bundle |
-| `--std-out <file>` | Path of the separate standard library file |
+| `--std-out <file>` | Path of the separate standard library file (default: `stdlib.js` next to the bundle) |
 | `-I <dir>`, `-D <name>[=<value>]`, `-U <name>` | Preprocessor options |
 | `--check` | Check syntax and types without generating output |
 | `-Werror`, `-w` | Warnings as errors / no warnings |
 | `--quiet`, `--verbose` | Output verbosity |
 | `-h, --help`, `-v, --version` | Help and version |
+
+When the bundle goes to standard output (no `-o`), the standard library needs
+`--std-out <file>` or `--embed-std`, and a source map must be `inline`.
+`--target=es6`, `-Idir`, `-DNAME=1`, `-oout.js` and `--` are accepted too; a
+repeated option keeps its last value.
 
 A C++ program becomes a JavaScript program: the bundle runs `main()` when it
 is loaded. Functions declared `extern "C"` are also exported, on `exports` in

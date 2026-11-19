@@ -16,7 +16,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
 | 1   | Scope definition                        | In progress  | 13 / 15  |
-| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 4 / 9    |
+| 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 6 / 9    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 7    |
 | 5   | Parser and AST                          | Not started  | 0 / 12   |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 13   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 25 / 119 items done.**
+**Overall: 27 / 119 items done.**
 
 ---
 
@@ -64,9 +64,10 @@ Decisions to take with the owner before writing the compiler core.
 
 ## Phase 2 — Infrastructure
 
-- [ ] CLI entry point `bin/cpp2js.js` with argument parser (no libraries).
-- [ ] `--help` and `--version`; usage errors and checks of D-021 (exit code 2).
-- [ ] Programmatic API `compile(options)` in `src/index.js`.
+- [x] CLI entry point `bin/cpp2js.js` with argument parser (no libraries) (D-028).
+- [x] `--help` and `--version`; usage errors and checks of D-021 (exit code 2).
+- [~] Programmatic API `compile(options)` in `src/index.js` (loads inputs; phases missing;
+  output writing and `--verbose` still to do).
 - [x] Source file abstraction with line/column mapping (`src/source/source-file.js`).
 - [x] Diagnostics: errors, warnings, notes; compiler-style formatting (D-023).
 - [x] Minimal in-house test runner (`npm test`), no external framework (D-022).
@@ -209,3 +210,5 @@ Decisions to take with the owner before writing the compiler core.
 - **2026-11-19** — Owner requirements D-025 (JavaScript binding headers: ES5 DOM, ES6 DOM,
   Node.js) and D-026 (`__js__` inline JavaScript, like `__asm__`); Phase 1 reopened for
   their design, items added to Phases 4-8 and 10. Overall count corrected to 25 done.
+- **2026-11-19** — CLI done (D-028: `stdlib.js` default, stdout rule, conflicts, syntax);
+  `compile()` started. Next: fixture-based tests, then CI.
