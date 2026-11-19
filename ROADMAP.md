@@ -15,19 +15,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | #   | Phase                                   | Status       | Progress |
 | --- | --------------------------------------- | ------------ | -------- |
 | 0   | Project setup                           | Done         | 8 / 8    |
-| 1   | Scope definition                        | In progress  | 13 / 15  |
+| 1   | Scope definition                        | Done         | 16 / 16  |
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Not started  | 0 / 9    |
 | 4   | Lexer                                   | Not started  | 0 / 7    |
-| 5   | Parser and AST                          | Not started  | 0 / 12   |
-| 6   | Semantic analysis                       | Not started  | 0 / 13   |
-| 7   | Lowering and code generation            | Not started  | 0 / 12   |
-| 8   | Printer, minifier, source maps          | Not started  | 0 / 8    |
+| 5   | Parser and AST                          | Not started  | 0 / 13   |
+| 6   | Semantic analysis                       | Not started  | 0 / 14   |
+| 7   | Lowering and code generation            | Not started  | 0 / 13   |
+| 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
-| 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 13   |
+| 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 28 / 118 items done.**
+**Overall: 31 / 124 items done.**
 
 ---
 
@@ -59,8 +59,9 @@ Decisions to take with the owner before writing the compiler core.
 - [x] Full list and names of CLI flags (D-021).
 - [x] Bundle shape — executable program calling `main()` (D-011).
 - [x] Minimum supported Node.js version — 0.10 (D-020).
-- [ ] Design of the `__js__` inline JavaScript construct: syntax, operands, checks (D-026).
-- [ ] Design of the JavaScript binding headers: names, target/platform rules (D-025).
+- [x] Design of the `__js__` inline JavaScript construct: syntax, operands, checks (D-026).
+- [x] Design of the JavaScript binding headers: names, target/platform rules (D-025).
+- [x] Third-party CommonJS modules and global objects: `extern "JS"` (D-031).
 
 ## Phase 2 — Infrastructure
 
@@ -112,6 +113,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
 - [ ] `__js__` statements/expressions in the AST (D-026).
+- [ ] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
 
 ## Phase 6 — Semantic analysis
 
@@ -127,7 +129,8 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] `auto` type deduction and lambda captures.
 - [ ] `extern "C"` linkage: no overloading, duplicate-name checks (D-014).
 - [ ] Semantic diagnostics.
-- [ ] `__js__`: checks of operands and of the JavaScript against the target (D-026).
+- [ ] `__js__`: checks of operands (lvalue outputs, types of `__js__<T>`) (D-026).
+- [ ] `extern "JS"`: declarations only; module imports rejected on browser (D-031).
 
 ## Phase 7 — Lowering and code generation
 
@@ -142,7 +145,8 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Control flow (including `switch` fall-through and `goto` if in scope).
 - [ ] ES5 emitter.
 - [ ] ES6 emitter.
-- [ ] Emission of `__js__` code with its C++ operands bound (D-026).
+- [ ] Emission of `__js__` as an isolated function with its operands bound (D-026).
+- [ ] Emission of `extern "JS"` access: `require()` of modules, global objects (D-031).
 
 ## Phase 8 — Printer, minifier, source maps
 
@@ -154,6 +158,7 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Inline source map output.
 - [ ] Source maps tested against known mappings.
 - [ ] Minifier keeps `__js__` code and the names it refers to working (D-026).
+- [ ] Optional syntax check of `__js__` code with an in-house JS parser (later, D-026).
 
 ## Phase 9 — Bundler
 
@@ -175,9 +180,10 @@ Decisions to take with the owner before writing the compiler core.
 - [ ] Separate standard library bundle output.
 - [ ] Flag to embed the standard library bundle in the main output.
 - [ ] Runtime and standard library tests on ES5 and ES6, per platform.
-- [ ] Binding header for the ES5 DOM (D-025).
-- [ ] Binding header for the ES6 DOM (D-025).
-- [ ] Binding header for the Node.js API (D-025).
+- [ ] Base types header `<js>`: `js::value`, `js::object`, `js::array<T>`, `js::function` (D-025).
+- [ ] Binding header `<es5>`: DOM of ES5 browsers, namespace `dom::` (D-025).
+- [ ] Binding header `<es6>`: includes `<es5>`, adds ES2015+ APIs (D-025).
+- [ ] Node.js binding headers `<node/fs>`, `<node/child_process>`, ... (`node::`) (D-025).
 - [ ] Diagnostics for binding headers used with an incompatible target or platform (D-025).
 
 ## Phase 11 — Quality, documentation, release
@@ -215,3 +221,6 @@ Decisions to take with the owner before writing the compiler core.
   `compile()` started. Next: fixture-based tests, then CI.
 - **2026-11-19** — Fixture-based tests (D-029) with three CLI/pipeline fixtures.
 - **2026-11-19** — CI item dropped: no tests on GitHub (D-030). Next: open questions.
+- **2026-11-19** — Open questions closed: binding headers (D-025), `__js__` syntax (D-026),
+  `extern "JS"` for third-party code (D-031), shared `stdlib.js` (D-032). Phase 1 done again;
+  items added to Phases 5-8 and 10.

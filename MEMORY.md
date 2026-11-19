@@ -385,6 +385,53 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   dropped. Compatibility with old Node versions (D-020) must be checked
   locally if needed.
 
+### D-031 — Third-party JavaScript code through `extern "JS"`
+
+- **Status**: Accepted (owner, 2026-11-19).
+- **Decision**: C++ code calls existing JavaScript code (npm CommonJS
+  packages, libraries loaded by `<script>`) through declarations inside
+  `extern "JS" { ... }`, the counterpart of `extern "C"` for exports
+  (D-014). Only declarations are allowed there; the definitions already
+  exist in JavaScript.
+  - a namespace marked with the attribute `[[js::module("name")]]` is a
+    **CommonJS module**: `namespace [[js::module("left-pad")]] leftpad {...}`
+    is emitted as `var leftpad = require('left-pad');` and calls become
+    `leftpad.leftPad(...)`. Any package name works (`@scope/pkg`,
+    `lodash/fp`);
+  - a namespace without the attribute is a **global object** (e.g.
+    `jQuery` loaded by `<script>`, or built-ins such as `Math`);
+  - modules are always loaded with **`require` at run time**; their code is
+    never embedded in the bundle;
+  - on `--platform browser`, where `require` does not exist, importing a
+    module is a compile-time **error**; global objects are allowed
+    (agent choice, the owner had no preference).
+- **Reason**: owner requirement; one mechanism, symmetric with `extern "C"`.
+  The attribute keeps the module name next to the namespace it describes.
+  Attributes on namespaces are standard from C++17; cpp2js accepts them as
+  an extension of its C++11 subset (D-010).
+- **Rule 2 of AGENTS.md**: it forbids dependencies of the transpiler and of
+  its tooling. Packages chosen by the user are dependencies of the user's
+  program, as libraries are for a C++ program, and are never bundled.
+- **Discarded**: `extern "JS:<module>"` linkage strings; `#pragma` before
+  the block; namespace name as module name (fails for `left-pad`); a purely
+  dynamic `js::require()`; embedding module code with an in-house CommonJS
+  loader; emitting `require` in the browser anyway.
+
+### D-032 — Shared `stdlib.js` is always overwritten
+
+- **Status**: Accepted (owner, 2026-11-19). Resolves the consequence noted
+  in D-028.
+- **Decision**: the standard library file is **always overwritten**, with no
+  check of what it contained. Building two programs into the same directory
+  with the default `stdlib.js` is the user's responsibility: each one should
+  get its own file with `--std-out <file>` (or use `--embed-std`).
+- **Reason**: owner choice; rebuilding a program after it starts using new
+  library parts must just work.
+- **Discarded**: incremental union of parts; warning on overwrite; error
+  when the existing file has different parts; recording the owning bundle
+  in the file; a new flag to change the library file (`--std-out` already
+  covers it).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -450,8 +497,8 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 
 ### D-025 — JavaScript binding headers: ES5 DOM, ES6 DOM, Node.js
 
-- **Status**: Accepted (owner, 2026-11-19). Design details still open
-  (section 5).
+- **Status**: Accepted (owner, 2026-11-19); design completed by the owner
+  the same day (see *Design* below).
 - **Decision**: besides the C++ standard library, the project provides
   headers that let C++ code use the JavaScript host APIs directly:
   - a header for the **DOM as available in ES5** browsers;
@@ -465,10 +512,32 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Relations**: ties to `--target` (D-021: ES6 DOM requires `es6`) and to
   `--platform` (D-015: DOM on `browser`/`mixed`, Node.js on `node`/`mixed`);
   misuse should be a compile-time diagnostic, as for `<fstream>` (D-017).
+- **Design** (owner, 2026-11-19):
+  - header names are flat: `<es5>` (DOM of ES5 browsers) and `<es6>` (DOM of
+    ES2015+ browsers); `<es6>` **includes** `<es5>` and only adds the newer
+    APIs. Node.js has **one header per core module**: `<node/fs>`,
+    `<node/child_process>`, `<node/path>`, ...;
+  - namespaces: `dom::` for the DOM (`dom::Document`, `dom::Element`, ...),
+    `node::fs`, `node::child_process`, ... for Node.js;
+  - APIs are exposed as **typed C++ classes and functions**, checked by the
+    type checker;
+  - the shared base types live in namespace `js::`, header `<js>`:
+    `js::value` (dynamic value with get/set/call), `js::object`,
+    `js::array<T>`, `js::function<R(Args...)>` (callbacks);
+  - a header used with an incompatible `--target` (`<es6>` with `es5`) or
+    `--platform` (`<es5>`/`<es6>` on `node`, `<node/...>` on `browser`) is
+    a compile-time **error**.
+- **Discarded**: `<js/dom_es5>`-style names and `js::dom::` namespace,
+  `<cpp2js/...h>` names, a single dynamic type only, independent ES5/ES6
+  headers, a warning on misuse.
+- **Implementation idea**: the binding headers can be written with
+  `extern "JS"` (D-031), so DOM, Node.js and third-party modules share one
+  mechanism.
 
 ### D-026 — `__js__`: inline JavaScript, like `__asm__`
 
-- **Status**: Accepted (owner, 2026-11-19). Syntax still open (section 5).
+- **Status**: Accepted (owner, 2026-11-19); syntax decided by the owner the
+  same day (see *Syntax* below).
 - **Decision**: the language gains a `__js__` construct, the counterpart of
   `__asm__`/`asm` in C++ compilers: it embeds JavaScript code verbatim in the
   generated output, at the point where it appears in the C++ source.
@@ -480,6 +549,30 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   minifier (D-004, phase 8) must not break code inside `__js__`, which is a
   strong reason to pass C++ values in and out through explicit operands
   rather than by name.
+- **Syntax** (owner, 2026-11-19):
+  - **optional operands, GCC extended-asm style**:
+    `__js__("%0 = Math.max(%1, %2);" : "=" (r) : (a), (b));` binds the C++
+    lvalue `r` as output `%0` and the values `a`, `b` as inputs `%1`, `%2`.
+    Without operands the string is plain code: `__js__("debugger;");`.
+    Adjacent string literals concatenate and raw strings `R"(...)"` work,
+    as for any C++ string;
+  - **statement and typed expression**: `__js__("...");` is a statement;
+    `__js__<T>("expr")` is an expression of C++ type `T`
+    (`double t = __js__<double>("Date.now()");`), so type checking keeps
+    working;
+  - **copied verbatim**: the JavaScript is not parsed or checked for now
+    (as compilers do with `asm`); an optional syntax check is a later
+    roadmap item, once an in-house JS parser exists;
+  - **isolated in a function**: each `__js__` is emitted as an immediately
+    invoked function whose parameters are the input operands, called with
+    `.call(this, ...)`; outputs are returned by the wrapper and assigned to
+    their C++ lvalues after the call. Names declared inside `__js__`
+    therefore never clash with minified names.
+- **Discarded**: plain string using C++ names directly (breaks with
+  mangling, D-012 and minification); operands mandatory; statement only;
+  syntax/target checking now; inline emission without isolation.
+- **Consequence**: `return`, `break` or `continue` inside `__js__` act on
+  the wrapper, not on the surrounding C++ code.
 
 ### D-027 — Every question to the owner goes through an interactive poll
 
@@ -628,17 +721,7 @@ time and simply use the obfuscated names.
 
 To be asked through interactive polls (D-027).
 
-- **`__js__` syntax (D-026)**: statement only, or also expression? Plain
-  string (`__js__("...")`), raw block, or GCC-style operands
-  (`__js__("..." : outputs : inputs)`) to bind C++ variables? Is the
-  JavaScript checked (parsed, validated against `--target`) or copied
-  blindly?
-- **Binding headers (D-025)**: header names and layout (e.g. `<js/dom5>`,
-  `<js/dom6>`, `<js/node>`); does the ES6 DOM header extend the ES5 one;
-  how JavaScript objects, callbacks and strings are typed on the C++ side;
-  what happens when a header is used with an incompatible target/platform
-  (error or warning).
-- **Shared `stdlib.js` (D-028)**: programs built into the same directory
-  share the default `stdlib.js`, but each build only writes what its own
-  program uses. Options: merge with the existing file, always emit the
-  parts needed by all builds of a directory, or warn on overwrite.
+- Details to settle when the relevant phase starts: how `std::string` and
+  JavaScript strings map onto each other in bindings; lifetime of C++
+  lambdas passed as `js::function` callbacks; which Node.js core modules get
+  a header first.
