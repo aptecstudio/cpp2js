@@ -616,6 +616,32 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: one constructor function per node kind (much more code,
   no benefit for traversal).
 
+### D-041 — Scopes and name lookup
+
+- **Status**: Accepted (agent, 2026-11-19).
+- **Decision**: `src/semantic/scope.js`. A `Scope` (kinds: namespace,
+  class, enum, function, block, prototype, template) maps names to
+  declarations in order, with its using-directives; namespace, class and
+  enum scopes point to their declaration (`entity`) and back (`scope`).
+  Lookup results are `{decls, ambiguous}`; several functions form an
+  overload set. Implemented rules:
+  - unqualified lookup (3.4.1) outwards, stopping at the first scope with
+    a result; class scopes search their bases (10.2);
+  - members of namespaces nominated by `using namespace` count as
+    declared in the nearest namespace enclosing both the directive and
+    the nominated namespace (7.3.4/2), transitively; a clash with a name
+    of that namespace is ambiguous;
+  - qualified lookup in namespaces (3.4.3.2): own members (plus inline
+    namespaces, 7.3.1/8) first, then nominated namespaces recursively;
+  - member lookup: a name in the class hides its bases; the same name in
+    several bases is ambiguous unless it is the same declaration;
+  - class/enum names are hidden by variables, functions and enumerators
+    of the same name in the same scope (3.3.10/2); `tagsOnly` finds them
+    for elaborated specifiers; using-declarations expand to their targets.
+- **Reason**: the parser depends on exact lookup (D-035).
+- **Discarded**: approximating using-directives by injecting names into
+  the scope that contains the directive (wrong in the ambiguous case).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
