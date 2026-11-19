@@ -743,6 +743,42 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Reason**: owner choice.
 - **Discarded**: pushing after every step; pushing immediately.
 
+### D-047 — Expressions, conversions and overload resolution
+
+- **Status**: Accepted (agent, 2026-11-19; owner approved the step order).
+- **Decision**:
+  - `src/semantic/conversions.js`: implicit conversion sequences (C++11
+    clause 4, 8.5.3, 13.3.3.1) are computed without side effects and then
+    applied as implicit `CastExpr` nodes, one per step, whose `conversion`
+    names the operation (`LValueToRValue`, `ArrayToPointerDecay`,
+    `IntegralCast`, `FloatingToIntegral`, `NullToPointer`, `BitCast`,
+    `MaterializeTemporary`, ...). Reference binding follows 8.5.3,
+    including temporaries for const lvalue and rvalue references;
+  - `src/semantic/overload.js`: overload resolution over standard
+    conversion sequences with the 13.3.3.2 tie-breakers (bool
+    conversions, rvalue vs lvalue reference binding, less cv-qualified
+    references and pointers). A single non-overloaded function gets
+    Clang's direct messages; an overload set gets "no matching function"
+    or "is ambiguous" with one note per candidate. The address of an
+    overload set is resolved by the target type (13.4);
+  - `src/semantic/constant.js`: integral constant expressions evaluated
+    with exact 64-bit arithmetic, truncated to each type (ILP32), including
+    const integral variables with constant initializers;
+  - `src/semantic/sema-expr.js`: built-in operators with promotions and
+    usual arithmetic conversions, pointer arithmetic and comparisons
+    (composite pointer type), value categories, casts (`static_cast`,
+    `const_cast`, `reinterpret_cast`, C-style trying them in the 5.4
+    order, functional), `sizeof`/`alignof`, `new`/`delete` for non-class
+    types, and initialization (copy, direct, list with narrowing errors,
+    arrays with bound deduction, char arrays from strings, references);
+  - warnings on by default as in Clang: `expression result unused`,
+    `division by zero is undefined`, value-changing conversions of
+    constants (not in list-initialization, where narrowing is an error).
+- **Reason**: every conversion is explicit in the AST, so code generation
+  can implement the integer semantics of D-016 exactly.
+- **Not yet**: class types (user-defined conversions, overloaded
+  operators, member access), `dynamic_cast`, exceptions, lambdas.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
@@ -922,7 +958,7 @@ cpp2js/
 │   ├── lexer/               # lexer.js (pp-tokens -> C++ tokens), literals.js (D-034)
 │   ├── parser/              # parser.js, parse-expr.js, parse-stmt.js (D-042)
 │   ├── ast/                 # nodes.js (D-040), dump.js (D-042)
-│   ├── semantic/            # types.js, scope.js, sema.js (D-039, D-041, D-042)
+│   ├── semantic/            # types, scope, sema, sema-expr, conversions, overload, constant
 │   ├── lowering/            # C++ AST -> JS-oriented intermediate representation
 │   ├── codegen/             # IR -> JavaScript AST for ES5 / ES6
 │   ├── printer/             # Pretty printer and minifier

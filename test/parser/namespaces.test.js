@@ -37,7 +37,7 @@ test('resolves qualified and global names', function () {
   assert.deepEqual(lines(r, /VarDecl (w|u|t|i1|i2)/), ['VarDecl w \'int\' copy-init',
     'VarDecl u \'int\' copy-init', 'VarDecl t \'int\' copy-init', 'VarDecl i1 \'int\'',
     'VarDecl i2 \'long\'']);
-  assert.strictEqual(r.unit.decls[1].decls[1].decls[1].init.decl, r.unit.decls[0]);
+  assert.strictEqual(r.unit.decls[1].decls[1].decls[1].init.operand.decl, r.unit.decls[0]);
 });
 
 test('supports namespace aliases', function () {

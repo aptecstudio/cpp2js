@@ -1,0 +1,7 @@
+main.cpp:7:14: error: constant expression evaluates to 300 which cannot be narrowed to type 'char'
+  char small{300};
+             ^~~
+main.cpp:9:19: error: cannot initialize a variable of type 'double *' with an lvalue of type 'int *'
+  double *wrong = first;
+                  ^~~~~
+2 errors generated.

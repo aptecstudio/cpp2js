@@ -45,7 +45,7 @@ test('builds declarator types inside out', function () {
   assert.equal(typeOf('int (*g(int))(double);'), 'int (*(int))(double)');
   assert.equal(typeOf('void (*table[4])(void);'), 'void (*[4])()');
   assert.equal(typeOf('int &&r = 1;'), 'int &&');
-  assert.equal(typeOf('int (&ra)[2] = x;'.replace('x', '{}')), 'int (&)[2]');
+  assert.equal(typeOf('extern int (&ra)[2];'), 'int (&)[2]');
   assert.equal(typeOf('int printf(const char *, ...);'), 'int (const char *, ...)');
   assert.equal(typeOf('auto f(int) -> long;'), 'long (int)');
   assert.equal(typeOf('int f(void);'), 'int ()');
@@ -62,7 +62,7 @@ test('reports invalid declarator types', function () {
     ['\'a\' declared as array of references of type \'int &\'']);
   assert.deepEqual(errorsOf('int &*p;'),
     ['\'p\' declared as a pointer to a reference of type \'int &\'']);
-  assert.deepEqual(errorsOf('void &r = 1;'), ['cannot form a reference to \'void\'']);
+  assert.deepEqual(errorsOf('extern void &r;'), ['cannot form a reference to \'void\'']);
   assert.deepEqual(errorsOf('int f()[3];'), ['function cannot return array type \'int [3]\'']);
   assert.deepEqual(errorsOf('int f()();'), ['function cannot return function type \'int ()\'']);
   assert.deepEqual(errorsOf('void a[2];'), ['array has incomplete element type \'void\'']);
@@ -128,7 +128,7 @@ test('records initializer styles', function () {
     return /VarDecl/.test(l);
   }), ['  VarDecl a \'int\' copy-init', '  VarDecl b \'int\' direct-init',
     '  VarDecl c \'int\' list-init', '  VarDecl d \'int\' copy-init',
-    '  VarDecl e \'int []\' copy-init']);
+    '  VarDecl e \'int [2]\' copy-init']);
 });
 
 test('overloads and redeclares functions', function () {
@@ -192,9 +192,9 @@ test('types string literals as const arrays', function () {
     'const char *t = "\\u00e9";');
   assert.deepEqual(r.dump.split('\n').filter(function (l) {
     return /StringLiteral/.test(l);
-  }), ['    StringLiteral \'const char [4]\' "abc"',
-    '    StringLiteral \'const char16_t [2]\' "\\xe9"',
-    '    StringLiteral \'const char [3]\' "\\xc3\\xa9"']);
+  }).map(function (l) { return l.trim(); }), ['StringLiteral \'const char [4]\' "abc"',
+    'StringLiteral \'const char16_t [2]\' "\\xe9"',
+    'StringLiteral \'const char [3]\' "\\xc3\\xa9"']);
 });
 
 test('resolves names and reports undeclared ones', function () {

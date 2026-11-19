@@ -106,9 +106,16 @@ function describe(node) {
     case 'DeclRefExpr':
       parts.push(node.decl.name, quote(node.type), node.valueCategory);
       break;
+    case 'CastExpr':
+      parts.push(quote(node.type), node.valueCategory, '<' + node.conversion + '>');
+      if (node.written) {
+        parts.push(node.castKind);
+      }
+      break;
     case 'UnaryExpr':
     case 'BinaryExpr':
-      parts.push('\'' + node.operator + '\'', quote(node.type));
+      parts.push('\'' + node.operator + '\'' + (node.isPostfix ? ' postfix' : ''),
+        quote(node.type), node.valueCategory);
       break;
     default:
       if (nodes.isExpression(node.kind) && node.type) {

@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 4 / 13   |
+| 5   | Parser and AST                          | In progress  | 5 / 13   |
 | 6   | Semantic analysis                       | In progress  | 3 / 14   |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 54 / 124 items done.**
+**Overall: 55 / 124 items done.**
 
 ---
 
@@ -113,7 +113,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [ ] Classes and structs: members, access specifiers, constructors, destructors.
 - [ ] Inheritance (single; multiple if in scope).
 - [ ] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`.
-- [ ] Expressions with full C++ precedence and associativity.
+- [x] Expressions with full C++ precedence and associativity (D-047).
 - [ ] Enumerations (including `enum class`).
 - [ ] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas.
 - [ ] Templates (after the core works, D-010).
@@ -126,8 +126,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Scopes and symbol tables (D-041).
 - [x] Name lookup (qualified, unqualified, member lookup) (D-041).
 - [x] Type representation (fundamental, class, pointer, reference, array, const) (D-039).
-- [ ] Type checking of expressions and implicit conversions.
-- [ ] Function overload resolution.
+- [~] Type checking of expressions and implicit conversions (D-047; class types pending).
+- [~] Function overload resolution (D-047; user-defined conversions pending).
 - [ ] Constructors, destructors and object lifetime rules.
 - [ ] Access control: `public` / `protected` / `private`.
 - [ ] `friend` functions and classes.
@@ -242,3 +242,5 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   (D-042). Step 2: namespaces, linkage, attributes (D-043).
 - **2026-11-19** — Package installable with npm, not published (D-045); strings become
   JavaScript strings (D-044, supersedes D-037); push at the end of every phase (D-046).
+- **2026-11-19** — Parser step 3: expressions, conversions, overload resolution, constant
+  evaluation (D-047).

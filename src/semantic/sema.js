@@ -319,59 +319,29 @@ Sema.prototype._functionType = function (returnType, suffix, label) {
  * @returns {?number}
  */
 Sema.prototype.evaluateArraySize = function (expr) {
-  var value = this.evaluateConstant(expr);
+  var value;
+  // After an error the size is 1, so that no cascade of errors follows.
+  if (!expr) {
+    return 1;
+  }
+  if (!(T.isIntegral(expr.type) || (T.isEnum(expr.type) && !T.isScopedEnum(expr.type)))) {
+    this.error('size of array has non-integer type ' + this._quoted(expr.type), expr.range);
+    return 1;
+  }
+  value = this.evaluateConstant(expr);
   if (value === null) {
     this.error('array size is not an integral constant expression', expr.range);
-    return null;
+    return 1;
   }
   if (value < 0) {
     this.error('array size is negative', expr.range);
-    return null;
+    return 1;
   }
   if (value === 0) {
     this.error('zero size arrays are not allowed', expr.range);
-    return null;
+    return 1;
   }
   return value;
-};
-
-/**
- * Evaluates an integral constant expression. Currently: literals,
- * parentheses, unary `+`/`-`/`~`/`!` and enumerators; extended with the
- * expression parser (Phase 5, step 3).
- *
- * @returns {?number} The value, or null if not constant.
- */
-Sema.prototype.evaluateConstant = function (expr) {
-  var operand;
-  if (!expr) {
-    return null;
-  }
-  switch (expr.kind) {
-    case 'IntegerLiteral':
-      return I.toNumber(expr.value, !T.isUnsigned(expr.type));
-    case 'CharLiteral':
-      return expr.value;
-    case 'BoolLiteral':
-      return expr.value ? 1 : 0;
-    case 'ParenExpr':
-      return this.evaluateConstant(expr.expr);
-    case 'DeclRefExpr':
-      return expr.decl && expr.decl.kind === 'EnumeratorDecl' ? expr.decl.value : null;
-    case 'UnaryExpr':
-      operand = this.evaluateConstant(expr.operand);
-      if (operand === null) {
-        return null;
-      }
-      switch (expr.operator) {
-        case '+': return operand;
-        case '-': return -operand;
-        case '~': return ~operand;
-        case '!': return operand ? 0 : 1;
-      }
-      return null;
-  }
-  return null;
 };
 
 // ---------------------------------------------------------------------------
@@ -479,33 +449,6 @@ Sema.prototype.declareVariable = function (spec, declarator, type) {
   }
   this.scope.declare(name, decl);
   return decl;
-};
-
-/**
- * Attaches an initializer to a variable and checks the rules that do not
- * need expression typing (step 3 adds conversions).
- */
-Sema.prototype.actOnVariableInit = function (decl, init, style) {
-  if (!decl || decl.kind !== 'VarDecl') {
-    return;
-  }
-  decl.init = init;
-  decl.initStyle = init ? style : null;
-  if (!init && decl.storage !== 'extern') {
-    if (T.isReference(decl.type)) {
-      this.error('declaration of reference variable \'' + decl.name +
-        '\' requires an initializer', decl.range);
-    } else if (decl.type.isConst && !T.isRecord(decl.type)) {
-      this.error('default initialization of an object of const type ' +
-        this._quoted(decl.type), decl.range);
-    } else if (decl.isConstexpr) {
-      this.error('constexpr variable \'' + decl.name + '\' must be initialized by a constant ' +
-        'expression', decl.range);
-    }
-  }
-  if (init && decl.storage === 'extern' && this.scope.kind !== ScopeKind.NAMESPACE) {
-    this.error('\'extern\' variable cannot have an initializer', decl.range);
-  }
 };
 
 /**
@@ -636,7 +579,8 @@ Sema.prototype._createParams = function (params) {
     out.push(this.createDecl('ParamDecl', params[i].range, {
       name: params[i].name,
       type: this.types.adjustParameter(params[i].type),
-      defaultArg: params[i].defaultArg || null,
+      defaultArg: params[i].defaultArg ? this.convertDefaultArgument(params[i].defaultArg,
+        this.types.adjustParameter(params[i].type)) : null,
       index: i
     }));
   }
@@ -1027,67 +971,6 @@ Sema.prototype.actOnParenExpr = function (inner, range) {
   return this._expr('ParenExpr', range, { expr: inner }, inner.type, inner.valueCategory);
 };
 
-/**
- * A name used as an expression.
- *
- * @param {string} name
- * @param {Object} range
- * @param {?Object} [lookup] A lookup result already computed by the parser.
- */
-Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
-  var result = qualifier ? scopes.lookupQualified(qualifier, name) :
-    scopes.lookupUnqualified(this.scope, name);
-  var decl;
-  var type;
-  var node;
-  if (!result.decls.length) {
-    this.error(qualifier ? 'no member named \'' + name + '\' in ' +
-      this.describeQualifier(qualifier) : 'use of undeclared identifier \'' + name + '\'',
-      range);
-    return null;
-  }
-  if (result.ambiguous) {
-    this.error('reference to \'' + name + '\' is ambiguous', range);
-    return null;
-  }
-  decl = result.decls[0];
-  switch (decl.kind) {
-    case 'VarDecl':
-    case 'ParamDecl':
-    case 'FieldDecl':
-      type = T.removeReference(decl.type);
-      node = this._expr('DeclRefExpr', range, { decl: decl }, type, 'lvalue');
-      break;
-    case 'FunctionDecl':
-      // An overload set stays unresolved until the call (step 3).
-      node = this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'lvalue');
-      break;
-    case 'EnumeratorDecl':
-      node = this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'prvalue');
-      break;
-    default:
-      this.error('\'' + name + '\' does not refer to a value', range);
-      return null;
-  }
-  node.qualifier = qualifier || null;
-  return node;
-};
-
-/**
- * Unary `+`, `-`, `~`, `!` on constant operands (enough for array bounds
- * in step 1; full typing in step 3).
- */
-Sema.prototype.actOnUnaryOperator = function (op, operand, range) {
-  var type;
-  if (!operand) {
-    return null;
-  }
-  type = op === '!' ? this.types.builtin('bool') : T.promote(this.types,
-    operand.type.unqualified);
-  return this._expr('UnaryExpr', range, { operator: op, operand: operand, isPostfix: false },
-    type, 'prvalue');
-};
-
 /** The function whose body is being parsed, or null. */
 Sema.prototype.currentFunction = function () {
   var scope = this.scope;
@@ -1095,21 +978,6 @@ Sema.prototype.currentFunction = function () {
     scope = scope.parent;
   }
   return scope ? scope.entity : null;
-};
-
-/**
- * `return expr;` — checks the presence of a value against the return type
- * (conversion of the value comes with expression typing, step 3).
- */
-Sema.prototype.actOnReturnStatement = function (value, range) {
-  var fn = this.currentFunction();
-  var returnsVoid = fn && T.isVoid(fn.type.returnType);
-  if (fn && value && returnsVoid && value.type && !T.isVoid(value.type)) {
-    this.error('void function \'' + fn.name + '\' should not return a value', range);
-  } else if (fn && !value && !returnsVoid) {
-    this.error('non-void function \'' + fn.name + '\' should return a value', range);
-  }
-  return ast.createNode('ReturnStmt', range, { value: value });
 };
 
 Sema.prototype.actOnInitList = function (inits, range) {
@@ -1120,3 +988,6 @@ module.exports = {
   Sema: Sema,
   BUILTIN_COMBINATIONS: BUILTIN_COMBINATIONS
 };
+
+require('./sema-expr');
+require('./overload');

@@ -68,7 +68,8 @@ Parser.prototype.parseStatement = function () {
       (this.isPunct('[') && this.isPunct('[', 1))) {
     return ast.createNode('DeclStmt', this.rangeOf(tok), { decls: this.parseDeclaration() });
   }
-  value = this.parseAssignmentExpression();
+  value = this.parseExpression();
   this.expectPunct(';', 'after expression');
-  return ast.createNode('ExprStmt', this.rangeFrom(tok), { expr: value });
+  return value ? this.sema.actOnExpressionStatement(value, this.rangeFrom(tok)) :
+    ast.createNode('NullStmt', this.rangeFrom(tok), {});
 };
