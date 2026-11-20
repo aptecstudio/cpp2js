@@ -147,6 +147,9 @@ Parser.prototype.parseTemplateDeclaration = function () {
   params = this.parseTemplateParameters(open);
   start = this._pos;
   info = this._templatedDeclarationInfo(params, keyword);
+  if (info.partial) {
+    return [];
+  }
   info.tokenStart = start;
   info.tokenEnd = this._pos;
   return [this.sema.actOnTemplateDecl(info)];
@@ -397,14 +400,157 @@ Parser.prototype._functionTemplateName = function () {
   }
 };
 
-/** Explicit specializations come in step T3. */
-Parser.prototype.parseExplicitSpecialization = function () {
-  this.fail('explicit template specializations are not supported yet');
+/** The primary class template named by `name`, or a failure. */
+Parser.prototype._primaryClassTemplate = function (nameTok) {
+  var info = this.sema.classifyName(nameTok.value);
+  if (info.kind !== 'template' || info.decls[0].templateKind !== 'class') {
+    this.fail('\'' + nameTok.value + '\' is not a class template', nameTok);
+  }
+  return info.decls[0];
 };
 
-/** Partial specializations come in step T3. */
-Parser.prototype.parsePartialSpecialization = function () {
-  this.fail('partial template specializations are not supported yet');
+/**
+ * `template <params> class X<pattern> { ... };` — a partial
+ * specialization, recorded on the primary template (14.5.5).
+ */
+Parser.prototype.parsePartialSpecialization = function (params) {
+  var tokenStart = this._pos;
+  var nameTok = this.peek(1);
+  var primary = this._primaryClassTemplate(nameTok);
+  var state;
+  var saved;
+  var patternArgs = null;
+  var self = this;
+  this._skip(2);
+  state = this._saveState();
+  saved = this._swapDiagnostics();
+  try {
+    this.sema.scope = this.sema.bindTemplateParameters({ params: params,
+      scope: this.sema.scope }, this.sema.placeholderArguments({ params: params }));
+    this._patternMode = (this._patternMode || 0) + 1;
+    patternArgs = this.withRecovery(function () {
+      return self.parseTemplateArguments(primary);
+    });
+  } finally {
+    this._patternMode--;
+    this._swapDiagnostics(saved);
+    state.pos = this._pos;
+    this._restoreState(state);
+  }
+  if (!patternArgs) {
+    this.fail('invalid template arguments in partial specialization', nameTok);
+  }
+  if (!this.isPunct('{') && !this.isPunct(':')) {
+    this.fail('partial specializations must be definitions', nameTok);
+  }
+  this._skipTo('{');
+  this._skipBraces();
+  this.expectPunct(';', 'after class');
+  primary.specializations.push({ params: params, patternArgs: patternArgs,
+    tokenStart: tokenStart, range: this.rangeOf(nameTok) });
+  return { partial: true };
+};
+
+/**
+ * `template <> class X<args> { ... };` or `template <> R f<args>(...)`
+ * (14.7.3): the specialization replaces the instantiation for those
+ * arguments.
+ */
+Parser.prototype.parseExplicitSpecialization = function () {
+  var nameTok;
+  var primary;
+  var args;
+  var key;
+  var record;
+  var tag;
+  this.next();
+  this.next();
+  if (this.isKeyword('class') || this.isKeyword('struct') || this.isKeyword('union')) {
+    tag = this.next().value;
+    nameTok = this.next();
+    primary = this._primaryClassTemplate(nameTok);
+    if (!this.isPunct('<')) {
+      this.fail('expected \'<\' after the name of an explicit specialization');
+    }
+    args = this.parseTemplateArguments(primary);
+    args = args && this.completeTemplateArguments(primary, args, this.rangeOf(nameTok));
+    if (!args) {
+      this._skipDefinitionRest();
+      return [];
+    }
+    key = this.sema.instantiationKey(args);
+    if (primary.instantiations[key] && !primary.instantiations[key].isExplicitSpecialization) {
+      this.diagnostics.error('explicit specialization of ' + this.sema.quote(
+        this.sema.types.record(primary.instantiations[key])) + ' after instantiation',
+        this.rangeOf(nameTok));
+      this._skipDefinitionRest();
+      return [];
+    }
+    record = this.sema.startClassInstantiation({ template: primary, args: args, key: key },
+      tag, this.rangeOf(nameTok));
+    record.isExplicitSpecialization = true;
+    if (this.isPunct(':')) {
+      this.parseBaseClause(record);
+    }
+    if (this.isPunct('{')) {
+      this.parseClassBody(record);
+    }
+    this.expectPunct(';', 'after class');
+    this.sema.finishClassInstantiation(record);
+    return [];
+  }
+  return this._parseFunctionSpecialization();
+};
+
+/** Explicit specialization of a function template. */
+Parser.prototype._parseFunctionSpecialization = function () {
+  var start = this.peek();
+  var decls;
+  var decl;
+  var candidates;
+  var self = this;
+  var registered = false;
+  this.sema.pushScope(ScopeKind.TEMPLATE, null);
+  this._explicitSpecialization = (this._explicitSpecialization || 0) + 1;
+  try {
+    decls = this.parseSimpleDeclaration();
+  } finally {
+    this._explicitSpecialization--;
+    this.sema.popScope();
+  }
+  decl = decls && decls[0];
+  if (!decl || decl.kind !== 'FunctionDecl') {
+    return [];
+  }
+  candidates = this.sema.classifyName(decl.name);
+  (candidates.kind === 'template' ? candidates.decls : []).forEach(function (tmpl) {
+    var deduced = [];
+    var args;
+    if (registered || tmpl.templateKind !== 'function' || !tmpl.pattern) {
+      return;
+    }
+    (decl.explicitTemplateArgs || []).forEach(function (a, i) {
+      deduced[i] = a;
+    });
+    if (!self.sema.matchExact(tmpl.pattern.type, decl.type, deduced)) {
+      return;
+    }
+    args = self.completeTemplateArguments(tmpl, deduced, decl.range, true);
+    if (!args) {
+      return;
+    }
+    tmpl.instantiations[self.sema.instantiationKey(args)] = decl;
+    decl.templateOf = tmpl;
+    decl.templateArgs = args;
+    decl.isExplicitSpecialization = true;
+    self.sema.translationUnit.instantiations.push(decl);
+    registered = true;
+  });
+  if (!registered) {
+    this.diagnostics.error('no function template matches function template specialization \'' +
+      decl.name + '\'', this.rangeOf(start));
+  }
+  return [];
 };
 
 // ---------------------------------------------------------------------------
@@ -529,6 +675,7 @@ Parser.prototype.instantiateClassTemplate = function (tmpl, args, range) {
   var state;
   var spec;
   var record;
+  var partial;
   if (cached) {
     return this.sema.types.record(cached);
   }
@@ -537,12 +684,20 @@ Parser.prototype.instantiateClassTemplate = function (tmpl, args, range) {
       range);
     return this.sema.types.record(record);
   }
+  partial = this.sema.selectPartialSpecialization(tmpl, args, range);
   state = this._saveState();
   this._resetForInstantiation();
   this._classInstantiations = (this._classInstantiations || 0) + 1;
   try {
-    this._pos = tmpl.tokenStart;
-    this.sema.scope = this.sema.bindTemplateParameters(tmpl, args);
+    if (partial) {
+      // Replay the partial specialization with its own parameters.
+      this._pos = partial.spec.tokenStart;
+      this.sema.scope = this.sema.bindTemplateParameters({ params: partial.spec.params,
+        scope: tmpl.scope }, partial.args);
+    } else {
+      this._pos = tmpl.tokenStart;
+      this.sema.scope = this.sema.bindTemplateParameters(tmpl, args);
+    }
     this.sema._classInstantiationTarget = { template: tmpl, args: args, key: key };
     spec = this._emptySpec();
     this.withRecovery(function () {

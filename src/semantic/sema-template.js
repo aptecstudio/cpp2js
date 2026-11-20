@@ -690,3 +690,152 @@ Sema.prototype.patternKey = function (type) {
   return key;
 };
 
+
+// ---------------------------------------------------------------------------
+// Specializations (C++11 14.7.3, 14.5.5).
+
+/**
+ * Exact matching of a pattern against a type for partial specializations
+ * and explicit function specializations: placeholders bind, everything
+ * else must be identical.
+ *
+ * @returns {boolean}
+ */
+Sema.prototype.matchExact = function (P, A, deduced) {
+  var index;
+  var bound;
+  var i;
+  var record;
+  if (this._isPlaceholder(P)) {
+    if ((P.isConst && !A.isConst) || (P.isVolatile && !A.isVolatile)) {
+      return false;
+    }
+    bound = this.types.qualified(A, A.isConst && !P.isConst, A.isVolatile && !P.isVolatile);
+    index = P.decl.templateParamIndex;
+    if (deduced[index] && deduced[index].type !== bound) {
+      return false;
+    }
+    deduced[index] = { kind: 'type', type: bound };
+    return true;
+  }
+  if (!this.isDependentType(P)) {
+    return P === A;
+  }
+  if (P.isConst !== A.isConst || P.isVolatile !== A.isVolatile) {
+    return false;
+  }
+  if (T.isPointer(P)) {
+    return T.isPointer(A) && this.matchExact(P.pointee, A.pointee, deduced);
+  }
+  if (T.isReference(P)) {
+    return A.kind === P.kind && this.matchExact(P.referee, A.referee, deduced);
+  }
+  if (T.isArray(P)) {
+    if (!T.isArray(A)) {
+      return false;
+    }
+    if (typeof P.size === 'string') {
+      index = Number(P.size.slice(4));
+      if (deduced[index] && !I.eq(deduced[index].value, I.fromNumber(A.size))) {
+        return false;
+      }
+      deduced[index] = { kind: 'value', value: I.fromNumber(A.size),
+        type: this.types.builtin('int') };
+    } else if (P.size !== A.size) {
+      return false;
+    }
+    return this.matchExact(P.element, A.element, deduced);
+  }
+  if (T.isFunction(P)) {
+    if (!T.isFunction(A) || A.params.length !== P.params.length ||
+        A.variadic !== P.variadic || A.methodConst !== P.methodConst) {
+      return false;
+    }
+    for (i = 0; i < P.params.length; i++) {
+      if (!this.matchExact(P.params[i], A.params[i], deduced)) {
+        return false;
+      }
+    }
+    return this.matchExact(P.returnType, A.returnType, deduced);
+  }
+  if (T.isRecord(P) && P.decl.templateOf) {
+    record = T.isRecord(A) ? A.decl : null;
+    if (!record || record.templateOf !== P.decl.templateOf) {
+      return false;
+    }
+    return this.matchArgumentLists(P.decl.templateArgs, record.templateArgs, deduced);
+  }
+  return false;
+};
+
+/** Matches a pattern argument list against concrete arguments. */
+Sema.prototype.matchArgumentLists = function (patterns, args, deduced) {
+  var i;
+  var p;
+  var a;
+  if (patterns.length !== args.length) {
+    return false;
+  }
+  for (i = 0; i < patterns.length; i++) {
+    p = patterns[i];
+    a = args[i];
+    if (p.kind !== a.kind) {
+      return false;
+    }
+    if (p.kind === 'type') {
+      if (!this.matchExact(p.type, a.type, deduced)) {
+        return false;
+      }
+    } else if (p.kind === 'value') {
+      if (p.value === null) {
+        if (deduced[p.dependentIndex] && !I.eq(deduced[p.dependentIndex].value, a.value)) {
+          return false;
+        }
+        deduced[p.dependentIndex] = a;
+      } else if (!I.eq(p.value, a.value)) {
+        return false;
+      }
+    }
+  }
+  return true;
+};
+
+/**
+ * The partial specialization that applies to `args`, the most
+ * specialized one if several match (14.5.5.1), with its deduced
+ * arguments.
+ *
+ * @returns {?{spec: Object, args: Array.<Object>}}
+ */
+Sema.prototype.selectPartialSpecialization = function (tmpl, args, range) {
+  var matches = [];
+  var self = this;
+  var best;
+  var diag;
+  tmpl.specializations.forEach(function (spec) {
+    var deduced = [];
+    if (self.matchArgumentLists(spec.patternArgs, args, deduced) &&
+        spec.params.every(function (p, i) { return !!deduced[i] || p.isPack; })) {
+      matches.push({ spec: spec, args: deduced });
+    }
+  });
+  if (matches.length <= 1) {
+    return matches[0] || null;
+  }
+  best = matches.filter(function (m) {
+    return matches.every(function (other) {
+      return other === m || (self.matchArgumentLists(other.spec.patternArgs,
+        m.spec.patternArgs, []) && !self.matchArgumentLists(m.spec.patternArgs,
+        other.spec.patternArgs, []));
+    });
+  });
+  if (best.length !== 1) {
+    diag = this.error('ambiguous partial specializations of ' + this.quote(
+      { kind: 'builtin', name: tmpl.name + this.argumentsToString(args) }), range);
+    matches.forEach(function (m) {
+      self.note(diag, 'partial specialization matches', m.spec.range);
+    });
+    return null;
+  }
+  return best[0];
+};

@@ -152,3 +152,43 @@ test('instantiates function template bodies when used', function () {
     'void f() { bad(1); }'),
     ['member reference base type \'int\' is not a structure or union']);
 });
+
+test('selects partial and explicit class specializations', function () {
+  var r = ok('template <class T> struct Traits { static const int kind = 0; };\n' +
+    'template <class T> struct Traits<T *> { static const int kind = 1; T *p; };\n' +
+    'template <class T> struct Traits<const T *> { static const int kind = 2; };\n' +
+    'template <> struct Traits<bool> { static const int kind = 3; };\n' +
+    'template <class T, int N> struct Traits<T[N]> { static const int kind = 4; };\n' +
+    'int a[Traits<int>::kind + 1];\nint b[Traits<int *>::kind + 1];\n' +
+    'int c[Traits<const int *>::kind + 1];\nint d[Traits<bool>::kind + 1];\n' +
+    'int e[Traits<char[3]>::kind + 1];');
+  assert.deepEqual(lines(r, /^VarDecl [a-e] /), ['VarDecl a \'int [1]\'', 'VarDecl b \'int [2]\'',
+    'VarDecl c \'int [3]\'', 'VarDecl d \'int [4]\'', 'VarDecl e \'int [5]\'']);
+  assert.ok(/FieldDecl p 'int \*'/.test(r.dump));
+});
+
+test('matches repeated parameters in partial specializations', function () {
+  ok('template <class A, class B> struct Same { static const bool value = false; };\n' +
+    'template <class A> struct Same<A, A> { static const bool value = true; };\n' +
+    'static_assert(Same<int, int>::value && !Same<int, long>::value, "same");');
+});
+
+test('checks explicit specializations', function () {
+  assert.deepEqual(errorsOf('template <class T> struct S {};\nS<int> s;\n' +
+    'template <> struct S<int> {};'), ['explicit specialization of \'S<int>\' after instantiation']);
+  assert.deepEqual(errorsOf('struct N {};\ntemplate <> struct N<int> {};'),
+    ['\'N\' is not a class template']);
+  assert.deepEqual(errorsOf('template <class T> int f(T *);\ntemplate <> int f(int);'),
+    ['no function template matches function template specialization \'f\'']);
+});
+
+test('uses explicit function specializations', function () {
+  var r = ok('template <class T> int name(T x) { return 0; }\n' +
+    'template <> int name<double>(double x) { return 7; }\n' +
+    'template <> int name(char x) { return 8; }\n' +
+    'int f() { return name(1.5) + name(\'c\') + name(1); }');
+  var specs = r.unit.instantiations.filter(function (d) { return d.kind === 'FunctionDecl'; })
+    .map(function (d) { return T(d) + (d.isExplicitSpecialization ? ' explicit' : ''); });
+  function T(d) { return require('../../src/semantic/types').typeToString(d.type); }
+  assert.deepEqual(specs.sort(), ['int (char) explicit', 'int (double) explicit', 'int (int)']);
+});

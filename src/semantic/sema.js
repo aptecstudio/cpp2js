@@ -388,6 +388,7 @@ Sema.prototype.actOnDeclarator = function (spec, declarator) {
   }
   if (T.isFunction(type)) {
     decl = this.declareFunction(spec, declarator, type);
+    decl.explicitTemplateArgs = declarator.templateArgs || null;
     if (declarator.operatorName) {
       this.checkOperatorDeclaration(decl, declarator.operatorName, false);
     }

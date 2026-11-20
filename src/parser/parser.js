@@ -660,8 +660,18 @@ Parser.prototype._scanQualifiedName = function (offset) {
 
 /** Whether a qualified (or global-qualified) name starts at `offset`. */
 Parser.prototype._startsQualifiedName = function (offset) {
-  return this.isPunct('::', offset) || (this.peek(offset).kind === TokenKind.IDENTIFIER &&
-    this.isPunct('::', offset + 1));
+  var scan;
+  if (this.isPunct('::', offset) || (this.peek(offset).kind === TokenKind.IDENTIFIER &&
+      this.isPunct('::', offset + 1))) {
+    return true;
+  }
+  // `X<args>::member`
+  if (this.peek(offset).kind === TokenKind.IDENTIFIER && this.isPunct('<', offset + 1) &&
+      this.sema.classifyName(this.peek(offset).value).kind === 'template') {
+    scan = this._scanQualifiedName(offset);
+    return !!scan && !!scan.qualifier;
+  }
+  return false;
 };
 
 /**
@@ -1008,7 +1018,7 @@ Parser.prototype.parseEnumSpecifier = function (spec) {
     scoped = true;
   }
   this.rejectAttributes(this.parseAttributes(), 'enumerations');
-  if (this._startsQualifiedName(0) && !this.isPunct('::', 0)) {
+  if (this.peek().kind === TokenKind.IDENTIFIER && this.isPunct('::', 1)) {
     this.fail('qualified enumeration names are not supported yet');
   }
   if (this.peek().kind === TokenKind.IDENTIFIER) {
@@ -1230,6 +1240,7 @@ Parser.prototype.parseDeclarator = function (abstract) {
   var op;
   var qualified;
   var savedScope;
+  var info;
   for (;;) {
     tok = this.peek();
     if (this.isPunct('*')) {
@@ -1269,6 +1280,13 @@ Parser.prototype.parseDeclarator = function (abstract) {
     this.next();
     declarator.name = tok.value;
     declarator.nameToken = tok;
+    if (this._explicitSpecialization && this.isPunct('<')) {
+      // `template <> void f<int>(int)`: arguments of the specialization.
+      info = this.sema.classifyName(tok.value);
+      if (info.kind === 'template') {
+        declarator.templateArgs = this.parseTemplateArguments(info.decls[0]);
+      }
+    }
   } else if (this.isPunct('(') && this._isNestedDeclarator(abstract)) {
     this.next();
     declarator.nested = this.parseDeclarator(abstract);

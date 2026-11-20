@@ -1164,6 +1164,31 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Limits**: partial ordering ignores some special rules; deduction from
   a template-id's address (`&f<int>` to a pointer) is not supported yet.
 
+### D-061 — Template specializations
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T3).
+- **Decision**:
+  - **explicit class specializations** `template <> struct X<args> {...}`
+    are parsed as ordinary classes and stored as the instantiation for
+    their arguments; after an implicit instantiation of the same
+    arguments they are an error (Clang's message);
+  - **partial specializations** `template <params> struct X<pattern>`
+    store their pattern arguments (analysed with placeholders) and their
+    tokens on the primary template; at instantiation every pattern is
+    matched exactly against the arguments (`matchExact`: placeholders
+    bind, the rest must be identical, repeated parameters must agree,
+    array bounds and value arguments deducible); the most specialized
+    match (mutual matching of patterns) is replayed with its own
+    parameters bound, ambiguity is an error;
+  - **explicit function specializations** `template <> R f<args>(...)` or
+    with arguments deduced from the declared type are parsed as ordinary
+    functions in a hidden scope and stored as the specialization for
+    their arguments, so calls deducing those arguments use them;
+  - `X<args>::member` works in expressions and types.
+- **Reason**: C++11 14.5.5 and 14.7.3; enough for type traits and the
+  standard library.
+- **Not yet**: explicit specializations of members of class templates.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

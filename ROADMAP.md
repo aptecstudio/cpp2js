@@ -117,7 +117,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Enumerations (including `enum class`) (D-049).
 - [x] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas, `decltype`,
   `static_assert` (D-055, D-056, D-057).
-- [~] Templates (D-059, D-060): class and function templates done; specializations,
+- [~] Templates (D-059 to D-061): class and function templates and specializations done;
   variadic templates, alias and member templates to do.
 - [ ] Syntax error recovery and diagnostics.
 - [x] `__js__` statements/expressions in the AST (D-026, D-058).
@@ -262,3 +262,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Parser step 6d: `__js__` statements and expressions (D-058).
 - **2026-11-20** — Templates T1: class templates by token replay (D-059).
 - **2026-11-20** — Templates T2: function templates, deduction, SFINAE, ordering (D-060).
+- **2026-11-20** — Templates T3: explicit and partial specializations (D-061).

@@ -53,11 +53,16 @@ Parser.prototype.parseClassSpecifier = function (spec) {
   var decl;
   var isFinal = false;
   this.rejectAttributes(this.parseAttributes(), 'classes');
-  if (this._startsQualifiedName(0)) {
+  if (this.isPunct('::') || (this.peek().kind === TokenKind.IDENTIFIER &&
+      this.isPunct('::', 1))) {
     this.fail('qualified class names are not supported yet');
   }
   if (this.peek().kind === TokenKind.IDENTIFIER) {
     nameTok = this.next();
+  }
+  if (nameTok && this.isPunct('<') && this.sema._classInstantiationTarget) {
+    // Replaying a partial specialization: its pattern was matched already.
+    this._skipAngleGroup();
   }
   if (this.peek().kind === TokenKind.IDENTIFIER && this.peek().value === 'final' &&
       (this.isPunct('{', 1) || this.isPunct(':', 1))) {
@@ -620,5 +625,23 @@ Parser.prototype._parseFriend = function (record, spec) {
     return;
   }
   this.expectPunct(';', 'after friend declaration');
+};
+
+/** Skips `< ... >` (with nested angle groups). */
+Parser.prototype._skipAngleGroup = function () {
+  var depth = 0;
+  var tok;
+  do {
+    tok = this.next();
+    if (tok.kind === TokenKind.PUNCT) {
+      if (tok.value === '<') {
+        depth++;
+      } else if (tok.value === '>') {
+        depth--;
+      } else if (tok.value === '>>') {
+        depth -= 2;
+      }
+    }
+  } while (depth > 0 && tok.kind !== TokenKind.EOF);
 };
 
