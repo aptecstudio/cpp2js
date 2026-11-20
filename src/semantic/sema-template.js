@@ -28,10 +28,12 @@ var ScopeKind = scopes.ScopeKind;
  * @returns {Object} TemplateDecl.
  */
 Sema.prototype.actOnTemplateDecl = function (info) {
-  var previous = info.templateKind === 'function' ? [] :
-    this.scope.lookupLocal(info.name).filter(function (d) {
-      return d.kind === 'TemplateDecl';
-    });
+  var previous = this.scope.lookupLocal(info.name).filter(function (d) {
+    // Function templates merge only with the same signature.
+    return d.kind === 'TemplateDecl' && (info.templateKind !== 'function' ||
+      (d.templateKind === 'function' && d.pattern && info.pattern &&
+        d.pattern.key === info.pattern.key));
+  });
   var decl;
   var diag;
   var other;
@@ -58,13 +60,14 @@ Sema.prototype.actOnTemplateDecl = function (info) {
       decl.isDefinition = true;
       decl.params = mergeDefaults(decl.params, info.params);
       decl.range = info.range;
+      decl.pattern = info.pattern || decl.pattern;
     }
     return decl;
   }
   other = this.scope.lookupLocal(info.name).filter(function (d) {
     return d.kind !== 'TemplateDecl' && d.kind !== 'FunctionDecl';
   });
-  if (other.length) {
+  if (other.length && info.templateKind !== 'function') {
     diag = this.error('redefinition of \'' + info.name + '\' as different kind of symbol',
       info.range);
     this.note(diag, 'previous definition is here', other[0].range);
@@ -78,6 +81,7 @@ Sema.prototype.actOnTemplateDecl = function (info) {
   decl.tokenStart = info.tokenStart;
   decl.tokenEnd = info.tokenEnd;
   decl.isDefinition = info.isDefinition;
+  decl.pattern = info.pattern || null;
   decl.scope = this.scope;
   decl.instantiations = Object.create(null);
   decl.specializations = [];
@@ -103,6 +107,9 @@ function argumentKey(args) {
     }
     if (a.kind === 'pack') {
       return 'p(' + argumentKey(a.elements) + ')';
+    }
+    if (a.value === null) {
+      return 'd' + a.dependentIndex;
     }
     return 'v' + I.toString(a.value, true) + ':' + a.type.id;
   }).join(',');
@@ -176,6 +183,10 @@ Sema.prototype.nonTypeArgument = function (param, expr, range) {
   var value;
   var raw;
   var rawValue;
+  if (expr.kind === 'DeclRefExpr' && expr.decl.dependentIndex !== undefined) {
+    return { kind: 'value', value: null, type: param.type.unqualified,
+      dependentIndex: expr.decl.dependentIndex, range: range };
+  }
   if (T.isFloating(expr.type)) {
     this.error('conversion from ' + this.quote(expr.type) + ' to ' + this.quote(param.type) +
       ' is not allowed in a converted constant expression', expr.range);
@@ -229,6 +240,8 @@ Sema.prototype.bindTemplateParameters = function (tmpl, args) {
     } else {
       decl = self.createDecl('EnumeratorDecl', param.range, { name: param.name,
         value: arg.value, type: arg.type });
+      // A value parameter of a signature pattern has no value yet.
+      decl.dependentIndex = arg.dependentIndex;
     }
     decl.isTemplateParam = true;
     scope.declare(param.name, decl);
@@ -313,3 +326,367 @@ Sema.prototype.finishClassInstantiation = function (record) {
 module.exports = {
   argumentKey: argumentKey
 };
+
+// ---------------------------------------------------------------------------
+// Function templates: deduction (C++11 14.8.2).
+
+/** Whether a type mentions a template parameter placeholder. */
+Sema.prototype.isDependentType = function (type) {
+  var self = this;
+  if (!type) {
+    return false;
+  }
+  switch (type.kind) {
+    case T.TypeKind.RECORD:
+      return !!type.decl.isDependent;
+    case T.TypeKind.POINTER:
+      return this.isDependentType(type.pointee);
+    case T.TypeKind.LVALUE_REF:
+    case T.TypeKind.RVALUE_REF:
+      return this.isDependentType(type.referee);
+    case T.TypeKind.ARRAY:
+      return typeof type.size === 'string' || this.isDependentType(type.element);
+    case T.TypeKind.FUNCTION:
+      return this.isDependentType(type.returnType) || type.params.some(function (p) {
+        return self.isDependentType(p);
+      });
+  }
+  return false;
+};
+
+/**
+ * Placeholder arguments for analysing a function template's signature:
+ * each type parameter is a distinct dependent class type, each value
+ * parameter a constant without value.
+ */
+Sema.prototype.placeholderArguments = function (tmpl) {
+  var self = this;
+  return tmpl.params.map(function (p, index) {
+    var type;
+    if (p.kind === 'type') {
+      type = self.dependentType(p.name || 'type-parameter-' + index);
+      type.decl.templateParamIndex = index;
+      type.decl.paramOf = tmpl;
+      return p.isPack ? { kind: 'pack', elements: [], placeholder: type } :
+        { kind: 'type', type: type };
+    }
+    return p.isPack ? { kind: 'pack', elements: [] } :
+      { kind: 'value', value: null, type: p.type, dependentIndex: index };
+  });
+};
+
+/**
+ * Deduces template arguments from a call (14.8.2.1).
+ *
+ * @param {Object} tmpl Function TemplateDecl with `pattern` (the signature
+ *   analysed with placeholders).
+ * @param {Array.<Object>} explicitArgs Explicitly specified arguments.
+ * @param {Array.<Object>} args Call arguments.
+ * @returns {{args: ?Array.<Object>, reason: ?string}} Deduced arguments,
+ *   or the reason deduction failed.
+ */
+Sema.prototype.deduceFromCall = function (tmpl, explicitArgs, args) {
+  var pattern = tmpl.pattern;
+  var deduced = [];
+  var failure = null;
+  var params;
+  var i;
+  if (!pattern) {
+    return { args: null, reason: 'invalid declaration' };
+  }
+  params = pattern.type.params;
+  for (i = 0; i < explicitArgs.length; i++) {
+    // Explicitly specified parameters are not deduced (14.8.1/6).
+    deduced[i] = { kind: explicitArgs[i].kind, type: explicitArgs[i].type,
+      value: explicitArgs[i].value, explicit: true };
+  }
+  if (args.length < pattern.requiredArgs || (args.length > params.length &&
+      !pattern.type.variadic)) {
+    return { args: null, reason: 'requires ' + (args.length < pattern.requiredArgs ?
+      (pattern.requiredArgs === params.length ? '' : 'at least ') + pattern.requiredArgs :
+      (pattern.requiredArgs === params.length ? '' : 'at most ') + params.length) +
+      ' argument' + ((args.length < pattern.requiredArgs ? pattern.requiredArgs :
+        params.length) === 1 ? '' : 's') + ', but ' + args.length + ' ' +
+      (args.length === 1 ? 'was' : 'were') + ' provided' };
+  }
+  for (i = 0; i < args.length && i < params.length && !failure; i++) {
+    if (!this.isDependentType(params[i]) || !args[i].type) {
+      continue;
+    }
+    failure = this._deduceArgument(params[i], args[i], deduced);
+  }
+  if (failure) {
+    return { args: null, reason: failure };
+  }
+  for (i = 0; i < tmpl.params.length; i++) {
+    if (!deduced[i] && !tmpl.params[i].defaultTokens && !tmpl.params[i].isPack) {
+      return { args: null, reason: 'couldn\'t infer template argument \'' +
+        tmpl.params[i].name + '\'' };
+    }
+  }
+  return { args: deduced, reason: null };
+};
+
+/** Deduces from one parameter/argument pair; returns a failure reason. */
+Sema.prototype._deduceArgument = function (param, arg, deduced) {
+  var argType = arg.type;
+  var P = param;
+  var A;
+  if (T.isReference(P)) {
+    if (P.kind === T.TypeKind.RVALUE_REF && this._isPlaceholder(P.referee) &&
+        !P.referee.isConst && !P.referee.isVolatile && arg.valueCategory === 'lvalue') {
+      // Forwarding reference: an lvalue deduces `A&` (14.8.2.1/3).
+      return this._bind(P.referee, this.types.lvalueReference(argType), deduced);
+    }
+    P = P.referee;
+    A = argType;
+  } else {
+    A = T.isArray(argType) ? this.types.pointer(argType.element) :
+      T.isFunction(argType) ? this.types.pointer(argType) : argType.unqualified;
+    P = P.unqualified;
+  }
+  return this._match(P, A, deduced, true);
+};
+
+/** Whether a type contains a deducible template parameter. */
+Sema.prototype._containsPlaceholder = function (type) {
+  var self = this;
+  if (!type) {
+    return false;
+  }
+  if (this._isPlaceholder(type)) {
+    return true;
+  }
+  if (T.isPointer(type)) {
+    return this._containsPlaceholder(type.pointee);
+  }
+  if (T.isReference(type)) {
+    return this._containsPlaceholder(type.referee);
+  }
+  if (T.isArray(type)) {
+    return typeof type.size === 'string' || this._containsPlaceholder(type.element);
+  }
+  if (T.isFunction(type)) {
+    return this._containsPlaceholder(type.returnType) || type.params.some(function (p) {
+      return self._containsPlaceholder(p);
+    });
+  }
+  if (T.isRecord(type) && type.decl.templateArgs) {
+    return type.decl.templateArgs.some(function (a) {
+      return a.kind === 'type' ? self._containsPlaceholder(a.type) : a.dependentIndex !==
+        undefined;
+    });
+  }
+  return false;
+};
+
+Sema.prototype._isPlaceholder = function (type) {
+  return T.isRecord(type) && type.decl.isDependent && type.decl.templateParamIndex !==
+    undefined;
+};
+
+/** Binds a placeholder (with its cv) to a type; checks consistency. */
+Sema.prototype._bind = function (placeholder, type, deduced) {
+  var index = placeholder.decl.templateParamIndex;
+  var value = T.isReference(type) ? type : this.types.qualified(type,
+    type.isConst && !placeholder.isConst, type.isVolatile && !placeholder.isVolatile);
+  var previous = deduced[index];
+  if (previous && previous.explicit) {
+    return null;
+  }
+  if (previous && previous.kind === 'type' && previous.type !== value) {
+    return 'deduced conflicting types for parameter \'' + placeholder.decl.name + '\' (' +
+      this.quote(previous.type) + ' vs. ' + this.quote(value) + ')';
+  }
+  deduced[index] = { kind: 'type', type: value };
+  return null;
+};
+
+/**
+ * Structural matching of a parameter pattern P against an argument type
+ * A. Non-dependent parts are left to the conversion check.
+ *
+ * @returns {?string} Failure reason.
+ */
+Sema.prototype._match = function (P, A, deduced) {
+  var i;
+  var reason;
+  var size;
+  var index;
+  if (this._isPlaceholder(P)) {
+    // Extra cv in P is fine: a qualification conversion completes the
+    // match (14.8.2.1/4); P's own cv is not part of the deduced type.
+    return this._bind(P, A, deduced);
+  }
+  if (!this.isDependentType(P) || !this._containsPlaceholder(P)) {
+    // Non-deduced contexts such as `typename T::type` (14.8.2.5/5).
+    return null;
+  }
+  if (T.isPointer(P)) {
+    if (!T.isPointer(A)) {
+      return 'could not match ' + this.quote(P) + ' against ' + this.quote(A);
+    }
+    return this._match(P.pointee, A.pointee, deduced, false);
+  }
+  if (T.isArray(P)) {
+    if (!T.isArray(A)) {
+      return 'could not match ' + this.quote(P) + ' against ' + this.quote(A);
+    }
+    if (typeof P.size === 'string') {
+      index = Number(P.size.slice(4));
+      size = { kind: 'value', value: I.fromNumber(A.size), type: this.types.builtin('int') };
+      if (deduced[index] && !I.eq(deduced[index].value, size.value)) {
+        return 'deduced conflicting values for non-type template parameter';
+      }
+      deduced[index] = deduced[index] || size;
+    }
+    return this._match(P.element, A.element, deduced, false);
+  }
+  if (T.isFunction(P)) {
+    if (!T.isFunction(A) || A.params.length !== P.params.length) {
+      return 'could not match ' + this.quote(P) + ' against ' + this.quote(A);
+    }
+    reason = this._match(P.returnType, A.returnType, deduced, false);
+    for (i = 0; i < P.params.length && !reason; i++) {
+      reason = this._match(P.params[i], A.params[i], deduced, false);
+    }
+    return reason;
+  }
+  if (T.isRecord(P) && P.decl.templateOf) {
+    return this._matchSpecialization(P, A, deduced);
+  }
+  return null;
+};
+
+/** `X<T, N>` against `X<int, 3>` (or a class derived from it, 14.8.2.1/4). */
+Sema.prototype._matchSpecialization = function (P, A, deduced) {
+  var record = T.isRecord(A) ? A.decl : null;
+  var reason;
+  var i;
+  var pArg;
+  var aArg;
+  var self = this;
+  while (record && record.templateOf !== P.decl.templateOf) {
+    record = record.bases && record.bases.length ? record.bases[0].type.decl : null;
+  }
+  if (!record) {
+    return 'could not match ' + this.quote(P) + ' against ' + this.quote(A);
+  }
+  for (i = 0; i < P.decl.templateArgs.length; i++) {
+    pArg = P.decl.templateArgs[i];
+    aArg = record.templateArgs[i];
+    if (!aArg) {
+      continue;
+    }
+    if (pArg.kind === 'type') {
+      reason = self._match(pArg.type, aArg.type, deduced, false);
+      if (!reason && !self.isDependentType(pArg.type) && pArg.type !== aArg.type) {
+        reason = 'could not match ' + self.quote(P) + ' against ' + self.quote(A);
+      }
+    } else if (pArg.dependentIndex !== undefined) {
+      if (deduced[pArg.dependentIndex] && !I.eq(deduced[pArg.dependentIndex].value,
+          aArg.value)) {
+        reason = 'deduced conflicting values for non-type template parameter';
+      }
+      deduced[pArg.dependentIndex] = deduced[pArg.dependentIndex] || aArg;
+    }
+    if (reason) {
+      return reason;
+    }
+  }
+  return null;
+};
+
+/**
+ * Partial ordering (14.5.6.2), simplified: `a` is more specialized than
+ * `b` if b's parameters can be deduced from a's pattern but not the
+ * reverse.
+ */
+Sema.prototype.moreSpecializedTemplate = function (a, b) {
+  return this._deducibleFrom(b, a) && !this._deducibleFrom(a, b);
+};
+
+Sema.prototype._deducibleFrom = function (target, source) {
+  var deduced = [];
+  var self = this;
+  var tp = target.pattern;
+  var sp = source.pattern;
+  var i;
+  if (!tp || !sp || tp.type.params.length !== sp.type.params.length) {
+    return false;
+  }
+  for (i = 0; i < tp.type.params.length; i++) {
+    if (self._match(T.removeReference(tp.type.params[i]).unqualified,
+        T.removeReference(sp.type.params[i]).unqualified, deduced, true)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/** Whether an argument list mentions template parameter placeholders. */
+Sema.prototype.isDependentArgumentList = function (args) {
+  var self = this;
+  return args.some(function (a) {
+    return a.kind === 'type' ? self.isDependentType(a.type) : a.kind === 'pack' ?
+      self.isDependentArgumentList(a.elements) : a.value === null;
+  });
+};
+
+/** `X<T>` inside a signature pattern: a dependent, uninstantiated type. */
+Sema.prototype.dependentSpecialization = function (tmpl, args) {
+  var key = 'dep:' + argumentKey(args);
+  var record = tmpl.instantiations[key];
+  if (!record) {
+    record = this.createDecl('RecordDecl', null, { tag: 'class', name: tmpl.name,
+      complete: false });
+    record.isDependent = true;
+    record.templateOf = tmpl;
+    record.templateArgs = args;
+    record.qualifiedName = tmpl.name + this.argumentsToString(args.map(function (a) {
+      return a.value === null && a.kind === 'value' ? { kind: 'type',
+        type: { kind: 'builtin', name: 'N' } } : a;
+    }));
+    tmpl.instantiations[key] = record;
+  }
+  return this.types.record(record);
+};
+
+/**
+ * Key identifying a function template signature independently of the
+ * parameter names (for merging redeclarations).
+ */
+Sema.prototype.patternKey = function (type) {
+  var swapped = [];
+  var key;
+  function collect(t) {
+    if (!t) {
+      return;
+    }
+    if (T.isRecord(t) && t.decl.templateParamIndex !== undefined) {
+      if (swapped.indexOf(t.decl) === -1) {
+        swapped.push(t.decl);
+      }
+    } else if (T.isPointer(t)) {
+      collect(t.pointee);
+    } else if (T.isReference(t)) {
+      collect(t.referee);
+    } else if (T.isArray(t)) {
+      collect(t.element);
+    } else if (T.isFunction(t)) {
+      collect(t.returnType);
+      t.params.forEach(collect);
+    }
+  }
+  collect(type);
+  swapped.forEach(function (d) {
+    d.savedName = d.qualifiedName;
+    d.qualifiedName = '$' + d.templateParamIndex;
+  });
+  key = T.typeToString(type);
+  swapped.forEach(function (d) {
+    d.qualifiedName = d.savedName;
+  });
+  return key;
+};
+

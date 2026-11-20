@@ -119,7 +119,8 @@ function isTag(decl) {
 }
 
 function isFunction(decl) {
-  return decl.kind === 'FunctionDecl';
+  return decl.kind === 'FunctionDecl' || (decl.kind === 'TemplateDecl' &&
+    decl.templateKind === 'function');
 }
 
 /**

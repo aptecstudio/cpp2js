@@ -56,6 +56,8 @@ function Parser(tokens, diagnostics, source, options) {
   this.options.platform = this.options.platform || 'browser';
   this.options.target = this.options.target || 'es5';
   this.sema = new Sema(diagnostics, source, this.options);
+  // Sema asks the parser to instantiate templates (D-059).
+  this.sema.parser = this;
   // Language of the enclosing linkage specification ('C', 'C++', 'JS').
   this._linkage = null;
   // Whether the linkage specification is the unbraced form
@@ -754,7 +756,9 @@ Parser.prototype.parseSimpleDeclaration = function () {
           this.fail('function definition is not allowed here');
         }
         this.sema.checkLinkage(decl, this._linkage, true);
-        this.parseFunctionBody(decl);
+        if (!this._deferFunctionTemplateBody(decl)) {
+          this.parseFunctionBody(decl);
+        }
         return [decl];
       }
       this.parseInitializer(decl);
@@ -897,6 +901,10 @@ Parser.prototype.parseDeclSpecifiers = function () {
         spec.isConstexpr = true;
       } else if (tok.value === 'friend') {
         spec.isFriend = true;
+      } else if (tok.value === 'typename' && !hasType) {
+        spec.namedType = this.parseTypenameSpecifier();
+        hasType = true;
+        continue;
       } else if (tok.value === 'decltype' && !hasType) {
         spec.namedType = this.parseDecltype();
         hasType = true;
@@ -1101,6 +1109,34 @@ Parser.prototype._parseEnumerator = function (decl) {
   this.sema.actOnEnumerator(decl, nameTok.value, init, this.rangeOf(nameTok));
 };
 
+/**
+ * `typename Q::name` (C++11 14.6/2): a type member of a dependent
+ * qualifier. In a signature pattern the qualifier is a placeholder and the
+ * result is an opaque dependent type (not deducible); at instantiation it
+ * is looked up for real.
+ */
+Parser.prototype.parseTypenameSpecifier = function () {
+  var keyword = this.next();
+  var scan = this._scanQualifiedName(0);
+  var qualifier;
+  if (!scan || !scan.qualifier) {
+    this.fail('expected a qualified name after \'typename\'');
+  }
+  qualifier = scan.qualifier;
+  this._skip(scan.length);
+  if (qualifier.isDependent) {
+    return this.sema.dependentType((qualifier.qualifiedName || qualifier.name) + '::' +
+      scan.name);
+  }
+  if (scan.info.kind === 'type') {
+    return scan.info.type;
+  }
+  this.diagnostics.error('no type named \'' + scan.name + '\' in ' +
+    (qualifier.kind === 'RecordDecl' ? this.sema.quote(this.sema.types.record(qualifier)) :
+      this.sema.describeQualifier(qualifier)), this.rangeFrom(keyword));
+  return this.sema.types.builtin('int');
+};
+
 /** `decltype ( expression )` as a type specifier (C++11 7.1.6.2). */
 Parser.prototype.parseDecltype = function () {
   var open;
@@ -1158,7 +1194,7 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
       FUNCTION_SPECIFIER_WORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'typedef' ||
       tok.value === 'constexpr' || tok.value === 'friend' || tok.value === 'enum' ||
-      tok.value === 'decltype' ||
+      tok.value === 'decltype' || tok.value === 'typename' ||
       tok.value === 'class' || tok.value === 'struct' || tok.value === 'union');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&

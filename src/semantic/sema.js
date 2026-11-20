@@ -166,8 +166,11 @@ Sema.prototype._classify = function (result) {
   if (decl.kind === 'NamespaceDecl' || decl.kind === 'NamespaceAliasDecl') {
     return { kind: 'namespace', decls: result.decls };
   }
-  if (decl.kind === 'TemplateDecl') {
-    return { kind: 'template', decls: result.decls };
+  if (decl.kind === 'TemplateDecl' || (decl.kind === 'FunctionDecl' &&
+      result.decls.some(function (d) { return d.kind === 'TemplateDecl'; }))) {
+    return { kind: 'template', decls: result.decls.filter(function (d) {
+      return d.kind === 'TemplateDecl';
+    }), all: result.decls };
   }
   if (decl.kind === 'TypedefDecl' && decl.pack) {
     return { kind: 'pack', decls: result.decls };
@@ -241,10 +244,8 @@ Sema.prototype.typeFromDeclarator = function (base, declarator) {
     if (op.kind === 'pointer') {
       type = this.types.qualified(this.types.pointer(type), op.isConst, op.isVolatile);
     } else {
-      if (T.isReference(type)) {
-        this.error(label + ' declared as a reference to a reference', op.range);
-        type = type.referee;
-      }
+      // A reference to a reference comes from a typedef or a template
+      // argument: it collapses (C++11 8.3.2/6), done by the type context.
       if (T.isVoid(type)) {
         this.error('cannot form a reference to \'void\'', op.range);
         type = this.types.builtin('int');
@@ -333,6 +334,10 @@ Sema.prototype.evaluateArraySize = function (expr) {
   // After an error the size is 1, so that no cascade of errors follows.
   if (!expr) {
     return 1;
+  }
+  if (expr.kind === 'DeclRefExpr' && expr.decl.dependentIndex !== undefined) {
+    // `T a[N]` in a function template signature: a deducible size.
+    return 'dep:' + expr.decl.dependentIndex;
   }
   if (!(T.isIntegral(expr.type) || (T.isEnum(expr.type) && !T.isScopedEnum(expr.type)))) {
     this.error('size of array has non-integer type ' + this._quoted(expr.type), expr.range);
@@ -528,7 +533,8 @@ Sema.prototype.declareFunction = function (spec, declarator, type) {
     isMethod: false
   });
   decl.params = this._createParams(suffix ? suffix.params : []);
-  if (this.scope.kind !== ScopeKind.NAMESPACE && this.scope.kind !== ScopeKind.CLASS) {
+  if (this.scope.kind !== ScopeKind.NAMESPACE && this.scope.kind !== ScopeKind.CLASS &&
+      this.scope.kind !== ScopeKind.TEMPLATE) {
     // Block-scope function declarations are allowed but rare.
     decl.storage = decl.storage || 'extern';
   }
@@ -543,6 +549,10 @@ Sema.prototype.declareFunction = function (spec, declarator, type) {
   }
   // The most recent matching declaration becomes `previous`.
   for (i = previous.length - 1; i >= 0; i--) {
+    if (previous[i].kind === 'TemplateDecl' && previous[i].templateKind === 'function') {
+      // Function templates and functions overload each other.
+      continue;
+    }
     if (previous[i].kind !== 'FunctionDecl') {
       if (!scopes.isTag(previous[i])) {
         diag = this.error('redefinition of \'' + name + '\' as different kind of symbol',

@@ -51,7 +51,8 @@ Sema.prototype.selectOverload = function (expr, decl) {
 
 function isOverloadSet(expr) {
   return (expr.kind === 'DeclRefExpr' || (expr.kind === 'UnaryExpr' && expr.operator === '&')) &&
-    !!expr.candidates && expr.candidates.length > 1;
+    ((!!expr.candidates && expr.candidates.length > 1) ||
+      (!!expr.templateCandidates && expr.templateCandidates.length > 0));
 }
 
 /**
@@ -340,6 +341,7 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
   var decl;
   var node;
   var functions;
+  var templates;
   if (!result.decls.length) {
     this.error(qualifier ? 'no member named \'' + name + '\' in ' +
       this.describeQualifier(qualifier) : 'use of undeclared identifier \'' + name + '\'',
@@ -372,12 +374,23 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
         'lvalue');
       break;
     case 'FunctionDecl':
+    case 'TemplateDecl':
+      if (decl.kind === 'TemplateDecl' && decl.templateKind !== 'function') {
+        this.error('\'' + name + '\' does not refer to a value', range);
+        return null;
+      }
       functions = uniqueFunctions(result.decls.filter(function (d) {
         return d.kind === 'FunctionDecl';
       }));
-      node = this._expr('DeclRefExpr', range, { decl: functions[0] }, functions[0].type,
-        'lvalue');
+      templates = result.decls.filter(function (d) {
+        return d.kind === 'TemplateDecl' && d.templateKind === 'function';
+      });
+      node = functions.length ?
+        this._expr('DeclRefExpr', range, { decl: functions[0] }, functions[0].type, 'lvalue') :
+        this._expr('DeclRefExpr', range, { decl: templates[0] }, this.types.builtin('void'),
+          'lvalue');
       node.candidates = functions;
+      node.templateCandidates = templates;
       break;
     case 'EnumeratorDecl':
       node = this._expr('DeclRefExpr', range, { decl: decl }, decl.type, 'prvalue');
@@ -972,6 +985,7 @@ Sema.prototype.actOnCall = function (callee, args, range) {
   var target = null;
   var converted;
   var calleeExpr;
+  var failures = [];
   var i;
   if (!callee || args.indexOf(null) !== -1) {
     return null;
@@ -990,7 +1004,8 @@ Sema.prototype.actOnCall = function (callee, args, range) {
     return target;
   }
   if (callee.kind === 'DeclRefExpr' && callee.candidates) {
-    target = this.resolveOverload(callee.candidates, args, range, callee.decl.name);
+    target = this.resolveOverload(this._withTemplateCandidates(callee, args, failures), args,
+      range, callee.decl.name, failures);
     if (!target) {
       return null;
     }
@@ -1021,6 +1036,38 @@ Sema.prototype.actOnCall = function (callee, args, range) {
   return this._expr('CallExpr', range, { callee: calleeExpr, args: converted,
     'function': target ? target.decl : null }, resultType(fnType.returnType),
     callCategory(fnType.returnType));
+};
+
+/**
+ * Adds the specializations of the function templates named by a callee:
+ * arguments are deduced from the call (or given explicitly), then the
+ * declaration is instantiated; deduction and substitution failures
+ * remove the template silently (SFINAE) and are kept for the notes.
+ */
+Sema.prototype._withTemplateCandidates = function (callee, args, failures) {
+  var templates = callee.templateCandidates || [];
+  var explicit = callee.explicitTemplateArgs || null;
+  // Explicit template arguments exclude non-template functions.
+  var all = explicit ? [] : callee.candidates.slice();
+  var self = this;
+  templates.forEach(function (tmpl) {
+    var deduction = self.deduceFromCall(tmpl, explicit || [], args);
+    var specialization;
+    if (!deduction.args) {
+      failures.push({ decl: tmpl, reason: deduction.reason });
+      return;
+    }
+    specialization = self.parser.instantiateFunctionTemplate(tmpl, deduction.args, true);
+    if (!specialization) {
+      failures.push({ decl: tmpl, reason: 'substitution failure' });
+      return;
+    }
+    specialization.fromTemplate = tmpl;
+    if (all.indexOf(specialization) === -1) {
+      all.push(specialization);
+    }
+  });
+  return all;
 };
 
 /**

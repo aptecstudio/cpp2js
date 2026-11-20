@@ -1133,6 +1133,37 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   names are looked up from the template's definition scope at
   instantiation.
 
+### D-060 — Function templates: deduction, SFINAE, ordering
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T2).
+- **Decision**:
+  - the signature of a function template is analysed once with each
+    template parameter replaced by a placeholder (a distinct dependent
+    class type, or a constant without value; `T a[N]` gets a deducible
+    size), giving the **pattern** used for deduction; errors there are
+    discarded. Redeclarations merge when their patterns match
+    (parameter names ignored); `X<T>` in a pattern is a dependent
+    specialization, `typename Q::name` an opaque non-deducible type;
+  - **deduction** (14.8.2.1) matches each parameter pattern against the
+    argument type: references bind the argument type, other parameters
+    see the decayed, cv-unqualified argument; forwarding references
+    deduce `A&` for lvalues; pointers, arrays (bounds), function types
+    and specializations of class templates (also through a base class)
+    are matched structurally; extra cv on P is allowed; non-deduced
+    contexts are skipped; conflicts and missing arguments give Clang's
+    "candidate template ignored" notes; explicit arguments (`f<int>`)
+    are not deduced and exclude non-template functions;
+  - the deduced declaration is then instantiated by token replay in
+    **SFINAE mode** (errors go to a throwaway bag and only discard the
+    candidate); its body is recorded and instantiated when the function
+    is used;
+  - **best viable function**: better conversions, then a non-template
+    beats a template specialization, then the more specialized template
+    (simplified partial ordering by mutual deduction of the patterns).
+- **Reason**: C++11 14.8 with Clang-compatible results on common code.
+- **Limits**: partial ordering ignores some special rules; deduction from
+  a template-id's address (`&f<int>` to a pointer) is not supported yet.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

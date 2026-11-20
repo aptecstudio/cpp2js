@@ -255,6 +255,7 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword) {
   var tok = this.peek();
   var nameTok;
   var isDefinition;
+  var pattern;
   var i;
   if (tok.kind === TokenKind.KEYWORD && (tok.value === 'class' || tok.value === 'struct' ||
       tok.value === 'union')) {
@@ -292,9 +293,67 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword) {
     this.fail('member templates of class templates are not supported yet');
   }
   nameTok = this._functionTemplateName();
+  pattern = this._parseSignaturePattern(params);
   this._skipDefinitionRest();
-  return { name: nameTok.value, params: params, templateKind: 'function', isDefinition: true,
-    range: this.rangeOf(nameTok) };
+  return { name: nameTok.value, params: params, templateKind: 'function',
+    isDefinition: this.isPunct('}', -1), pattern: pattern, range: this.rangeOf(nameTok) };
+};
+
+/**
+ * Analyses a function template's signature once, with each parameter
+ * replaced by a placeholder, to get the pattern used for deduction. Errors
+ * are discarded: the real check happens at instantiation.
+ *
+ * @returns {?{type: Object, requiredArgs: number, key: string}}
+ */
+Parser.prototype._parseSignaturePattern = function (params) {
+  var state = this._saveState();
+  var saved = this._swapDiagnostics();
+  var placeholders = this.sema.placeholderArguments({ params: params });
+  var spec;
+  var declarator;
+  var type;
+  var suffix;
+  var required;
+  try {
+    this.sema.scope = this.sema.bindTemplateParameters({ params: params,
+      scope: this.sema.scope }, placeholders);
+    this._patternMode = (this._patternMode || 0) + 1;
+    spec = this.parseDeclSpecifiers();
+    declarator = this.parseDeclarator(false);
+    type = this.sema.typeFromDeclarator(this.sema.typeFromSpecifiers(spec), declarator);
+  } catch (err) {
+    type = null;
+    if (!(err instanceof require('./parser').ParseError)) {
+      throw err;
+    }
+  } finally {
+    this._patternMode--;
+    this._swapDiagnostics(saved);
+    this._restoreState(state);
+  }
+  if (!type || !T.isFunction(type)) {
+    return null;
+  }
+  suffix = declarator.suffixes[0] || { params: [] };
+  required = suffix.params.length;
+  while (required > 0 && suffix.params[required - 1].defaultArg) {
+    required--;
+  }
+  return { type: type, requiredArgs: required, key: this.sema.patternKey(type) };
+};
+
+/**
+ * Sends diagnostics to a throwaway bag (no argument) or restores the
+ * previous one (argument).
+ */
+Parser.prototype._swapDiagnostics = function (saved) {
+  var Bag = require('../diagnostics/diagnostic-bag');
+  var previous = this.diagnostics;
+  var next = saved || new Bag();
+  this.diagnostics = next;
+  this.sema.diagnostics = next;
+  return previous;
 };
 
 /**
@@ -408,14 +467,14 @@ Parser.prototype.parseTemplateArguments = function (tmpl) {
  *
  * @returns {?Array.<Object>}
  */
-Parser.prototype.completeTemplateArguments = function (tmpl, args, range) {
+Parser.prototype.completeTemplateArguments = function (tmpl, args, range, deduced) {
   var params = tmpl.params;
   var out = [];
   var i;
   var state;
   var arg;
   var start;
-  if (!this.sema.checkTemplateArguments(tmpl, args.concat(params.slice(args.length)
+  if (!deduced && !this.sema.checkTemplateArguments(tmpl, args.concat(params.slice(args.length)
     .filter(function (p) { return p.defaultTokens; }).map(function (p) {
       return { kind: p.kind };
     })), range)) {
@@ -423,12 +482,16 @@ Parser.prototype.completeTemplateArguments = function (tmpl, args, range) {
   }
   for (i = 0; i < params.length; i++) {
     if (params[i].isPack) {
-      out.push({ kind: 'pack', elements: args.slice(i) });
+      out.push(deduced && args[i] && args[i].kind === 'pack' ? args[i] :
+        { kind: 'pack', elements: args.slice(i).filter(function (a) { return a; }) });
       break;
     }
-    if (i < args.length) {
+    if (i < args.length && args[i]) {
       out.push(args[i]);
       continue;
+    }
+    if (!params[i].defaultTokens) {
+      return null;
     }
     // Default argument: re-parse its tokens with earlier parameters bound.
     state = this._saveState();
@@ -529,7 +592,10 @@ Parser.prototype.parseTemplateIdAt = function (index, tmpl) {
     if (args) {
       result.args = this.completeTemplateArguments(tmpl, args, this.rangeFrom(nameTok));
     }
-    if (result.args && tmpl.templateKind === 'class') {
+    if (result.args && tmpl.templateKind === 'class' &&
+        this.sema.isDependentArgumentList(result.args)) {
+      result.type = this.sema.dependentSpecialization(tmpl, result.args);
+    } else if (result.args && tmpl.templateKind === 'class') {
       result.type = this.instantiateClassTemplate(tmpl, result.args, this.rangeFrom(nameTok));
     } else if (result.args && tmpl.templateKind === 'alias') {
       result.type = this.instantiateAliasTemplate(tmpl, result.args);
@@ -583,6 +649,9 @@ Parser.prototype.processPendingInstantiations = function () {
     } finally {
       this._restoreState(state);
     }
+    if (decl.templateOf && this.sema.translationUnit.instantiations.indexOf(decl) === -1) {
+      this.sema.translationUnit.instantiations.push(decl);
+    }
     queue = this.sema.pendingInstantiations;
   }
 };
@@ -603,6 +672,77 @@ Parser.prototype._deferTemplateBody = function (decl, scope) {
     // Virtual functions and destructors are needed by any object.
     this.sema.requireDefinition(decl);
   }
+  return true;
+};
+
+// ---------------------------------------------------------------------------
+// Function template instantiation.
+
+/**
+ * Instantiates the declaration of a function template specialization.
+ * With `sfinae`, errors make the instantiation fail silently (C++11
+ * 14.8.2/8); the body is instantiated later, when the function is used.
+ *
+ * @returns {?Object} FunctionDecl, or null on substitution failure.
+ */
+Parser.prototype.instantiateFunctionTemplate = function (tmpl, args, sfinae) {
+  var key;
+  var cached;
+  var state;
+  var saved;
+  var decls = null;
+  var decl;
+  var self = this;
+  var failed;
+  args = this.completeTemplateArguments(tmpl, args, tmpl.range, true);
+  if (!args) {
+    return null;
+  }
+  key = this.sema.instantiationKey(args);
+  cached = tmpl.instantiations[key];
+  if (cached !== undefined) {
+    return cached;
+  }
+  state = this._saveState();
+  this._resetForInstantiation();
+  saved = sfinae ? this._swapDiagnostics() : null;
+  try {
+    this._pos = tmpl.tokenStart;
+    this.sema.scope = this.sema.bindTemplateParameters(tmpl, args);
+    this._functionInstantiation = (this._functionInstantiation || 0) + 1;
+    decls = this.withRecovery(function () {
+      return self.parseSimpleDeclaration();
+    });
+  } finally {
+    this._functionInstantiation--;
+    failed = !!saved && this.diagnostics.hasErrors();
+    if (saved) {
+      this._swapDiagnostics(saved);
+    }
+    this._restoreState(state);
+  }
+  decl = decls && decls[0] && decls[0].kind === 'FunctionDecl' && !failed ? decls[0] : null;
+  if (decl) {
+    decl.templateOf = tmpl;
+    decl.templateArgs = args;
+    decl.qualifiedName = (tmpl.qualifiedName || tmpl.name) + this.sema.argumentsToString(args);
+  }
+  tmpl.instantiations[key] = decl;
+  return decl;
+};
+
+/**
+ * In a function template instantiation, the body is recorded instead of
+ * parsed (it is instantiated when the function is used).
+ *
+ * @returns {boolean}
+ */
+Parser.prototype._deferFunctionTemplateBody = function (decl) {
+  if (!this._functionInstantiation || !decl || decl.kind !== 'FunctionDecl') {
+    return false;
+  }
+  decl.pendingBody = { pos: this._pos, scope: this.sema.scope };
+  this._skipBraces();
   return true;
 };
 

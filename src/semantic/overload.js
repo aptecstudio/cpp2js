@@ -94,7 +94,7 @@ function isBetter(a, b) {
  * @param {string} name Function name, for messages.
  * @returns {?{decl: Object, args: Array.<Object>}} null after an error.
  */
-Sema.prototype.resolveOverload = function (candidates, args, range, name) {
+Sema.prototype.resolveOverload = function (candidates, args, range, name, failures) {
   var checked = [];
   var viable = [];
   var best = null;
@@ -102,7 +102,15 @@ Sema.prototype.resolveOverload = function (candidates, args, range, name) {
   var diag;
   var i;
   var j;
-  if (candidates.length === 1) {
+  failures = failures || [];
+  if (!candidates.length) {
+    diag = this.error('no matching function for call to \'' + name + '\'', range);
+    failures.forEach(function (f) {
+      this.note(diag, 'candidate template ignored: ' + f.reason, f.decl.range);
+    }, this);
+    return null;
+  }
+  if (candidates.length === 1 && !failures.length) {
     // A single function gets Clang's direct messages (wrong count, or the
     // conversion error of the argument).
     return this._callSingle(candidates[0], args, range);
@@ -116,14 +124,18 @@ Sema.prototype.resolveOverload = function (candidates, args, range, name) {
   if (!viable.length) {
     diag = this.error('no matching function for call to \'' + name + '\'', range);
     for (i = 0; i < checked.length; i++) {
-      this.note(diag, 'candidate function not viable: ' + checked[i].reason,
-        checked[i].decl.range);
+      this.note(diag, (checked[i].decl.fromTemplate ? 'candidate template ignored: ' :
+        'candidate function not viable: ') + checked[i].reason,
+        (checked[i].decl.fromTemplate || checked[i].decl).range);
     }
+    failures.forEach(function (f) {
+      this.note(diag, 'candidate template ignored: ' + f.reason, f.decl.range);
+    }, this);
     return null;
   }
   for (i = 0; i < viable.length; i++) {
     for (j = 0; j < viable.length; j++) {
-      if (i !== j && !isBetter(viable[i], viable[j])) {
+      if (i !== j && !this._wins(viable[i], viable[j])) {
         break;
       }
     }
@@ -224,6 +236,37 @@ Sema.prototype.resolveMethodOverload = function (candidates, objType, args, rang
     return null;
   }
   return { decl: best.decl, args: this._applyCandidate(best, args, range) };
+};
+
+/** Whether two candidates have indistinguishable conversion sequences. */
+function sameConversions(a, b) {
+  var i;
+  for (i = 0; i < a.conversions.length; i++) {
+    if (conv.compareConversions(a.conversions[i], b.conversions[i]) !== 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Best viable function rule (13.3.3/1): better conversions, then a
+ * non-template beats a template specialization, then the more
+ * specialized template wins.
+ */
+Sema.prototype._wins = function (a, b) {
+  var ta = a.decl.fromTemplate;
+  var tb = b.decl.fromTemplate;
+  if (isBetter(a, b)) {
+    return true;
+  }
+  if (!sameConversions(a, b)) {
+    return false;
+  }
+  if (!ta && tb) {
+    return true;
+  }
+  return !!ta && !!tb && this.moreSpecializedTemplate(ta, tb);
 };
 
 /** Whether candidate `a` is better than `b` (for constructors). */

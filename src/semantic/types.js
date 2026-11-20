@@ -421,7 +421,8 @@ function sizeOf(type) {
       return sizeOf(type.referee);
     case TypeKind.ARRAY:
       element = sizeOf(type.element);
-      return type.size === null || element === null ? null : element * type.size;
+      return typeof type.size !== 'number' || element === null ? null :
+        element * type.size;
     case TypeKind.RECORD:
     case TypeKind.ENUM:
       return type.decl.complete ? type.decl.size : null;
@@ -551,7 +552,8 @@ function print(type, inner) {
       return print(type.referee, '&&' + inner);
     case TypeKind.ARRAY:
       wrapped = needsParens(inner) ? '(' + inner + ')' : inner;
-      return print(type.element, wrapped + '[' + (type.size === null ? '' : type.size) + ']');
+      return print(type.element, wrapped + '[' + (type.size === null ? '' :
+        typeof type.size === 'string' ? 'N' : type.size) + ']');
     case TypeKind.FUNCTION:
       wrapped = needsParens(inner) ? '(' + inner + ')' : inner;
       params = type.params.map(function (p) { return print(p, ''); });

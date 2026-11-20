@@ -132,7 +132,7 @@ Parser.prototype.startsTypeId = function (offset) {
   if (tok.kind === TokenKind.KEYWORD) {
     return !!(SIMPLE_TYPE_KEYWORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'enum' ||
-      tok.value === 'decltype' ||
+      tok.value === 'decltype' || tok.value === 'typename' ||
       tok.value === 'class' || tok.value === 'struct' || tok.value === 'union');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT && tok.value === '::')) {
@@ -468,6 +468,9 @@ Parser.prototype.parsePrimaryExpression = function () {
   var tok = this.peek();
   var inner;
   var savedDepth;
+  var info;
+  var explicit;
+  var expr;
   switch (tok.kind) {
     case TokenKind.INTEGER:
       this.next();
@@ -484,6 +487,18 @@ Parser.prototype.parsePrimaryExpression = function () {
     case TokenKind.IDENTIFIER:
       if (this.startsTypeId(0)) {
         return this.parseFunctionalCast();
+      }
+      info = this.sema.classifyName(tok.value);
+      if (info.kind === 'template' && info.decls[0].templateKind === 'function' &&
+          this.isPunct('<', 1)) {
+        // `f<int>(x)`: explicit template arguments.
+        this.next();
+        explicit = this.parseTemplateArguments(info.decls[0]);
+        expr = this.sema.actOnIdExpression(tok.value, this.rangeFrom(tok));
+        if (expr && explicit) {
+          expr.explicitTemplateArgs = explicit;
+        }
+        return expr;
       }
       if (this._startsQualifiedName(0)) {
         return this.parseQualifiedIdExpression();
