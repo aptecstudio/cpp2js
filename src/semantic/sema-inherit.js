@@ -109,6 +109,7 @@ Sema.prototype.effectiveAccess = function (member, namingClass) {
   }
   for (i = path.length - 1; i >= 0; i--) {
     if (access === 'private' || access === 'none') {
+      // Inaccessible further down; the note shows what made it private.
       access = 'none';
       continue;
     }
@@ -124,7 +125,7 @@ Sema.prototype.effectiveAccess = function (member, namingClass) {
  * Replaces the step-5b placeholder: checks access through the bases of
  * the naming class.
  */
-Sema.prototype._baseAccessible = function (namingClass, member, range) {
+Sema.prototype._baseAccessible = function (namingClass, member, range, objectClass) {
   var eff = this.effectiveAccess(member, namingClass);
   var contexts = this._accessContexts();
   var i;
@@ -141,19 +142,23 @@ Sema.prototype._baseAccessible = function (namingClass, member, range) {
       return true;
     }
     if (eff.access !== 'none' && (contexts[i] === namingClass ||
-        this._isNestedIn(contexts[i], namingClass) ||
-        (eff.access === 'protected' && this.isDerivedFrom(contexts[i], namingClass)))) {
+        this._isNestedIn(contexts[i], namingClass))) {
       return true;
+    }
+    if (eff.access === 'protected' && this.isDerivedFrom(contexts[i], namingClass)) {
+      return this._checkProtectedObject(member, contexts[i], objectClass, range);
     }
   }
   if (eff.access === 'none') {
     diag = this.error('\'' + member.name + '\' is a private member of ' +
       this.quote(this.types.record(member.parent)), range);
-    this.note(diag, 'declared private here', member.range);
+    this.note(diag, eff.constrainedBy ? 'constrained by ' + eff.constrainedBy.access +
+      ' inheritance here' : 'declared private here', eff.constrainedBy ?
+      eff.constrainedBy.range : member.range);
     return false;
   }
   diag = this.error('\'' + member.name + '\' is a ' + eff.access + ' member of ' +
-    this.quote(this.types.record(eff.constrainedBy ? member.parent : namingClass)), range);
+    this.quote(this.types.record(member.parent)), range);
   this.note(diag, eff.constrainedBy ? 'constrained by ' + eff.constrainedBy.access +
     ' inheritance here' : 'declared ' + eff.access + ' here', eff.constrainedBy ?
     eff.constrainedBy.range : member.range);

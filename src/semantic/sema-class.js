@@ -506,7 +506,7 @@ Sema.prototype._buildMemberExpr = function (object, objType, isArrow, decls, ran
   var node;
   var methods;
   if (member.kind === 'FieldDecl') {
-    if (!this.checkAccess(member, namingClass, nameRange)) {
+    if (!this.checkAccess(member, namingClass, nameRange, null, objType.decl)) {
       return null;
     }
     if (object && namingClass !== member.parent && !this._convertObjectToBase(object, isArrow,
@@ -618,11 +618,11 @@ Sema.prototype._accessContexts = function () {
  * @param {string} [message] Replaces the default error message.
  * @returns {boolean}
  */
-Sema.prototype.checkAccess = function (member, namingClass, range, message) {
+Sema.prototype.checkAccess = function (member, namingClass, range, message, objectClass) {
   // `namingClass` matters for access through derived classes (step 5d).
   if (namingClass && namingClass !== member.parent && namingClass.bases &&
       namingClass.bases.length) {
-    return this._baseAccessible(namingClass, member, range);
+    return this._baseAccessible(namingClass, member, range, objectClass);
   }
   var contexts;
   var owner = member.parent;
@@ -641,7 +641,7 @@ Sema.prototype.checkAccess = function (member, namingClass, range, message) {
       return true;
     }
     if (member.access === 'protected' && this.isDerivedFrom(contexts[i], owner)) {
-      return true;
+      return this._checkProtectedObject(member, contexts[i], objectClass, range);
     }
   }
   if (owner.friends && this.currentFunction() &&
@@ -651,6 +651,27 @@ Sema.prototype.checkAccess = function (member, namingClass, range, message) {
   diag = this.error(message || '\'' + member.name + '\' is a ' + member.access +
     ' member of ' + this.quote(this.types.record(owner)), range);
   this.note(diag, 'declared ' + member.access + ' here', member.range);
+  return false;
+};
+
+/**
+ * A protected non-static member reached because the context derives from
+ * its class may only be used on objects of the context's class (or of
+ * classes derived from it), C++11 11.4/1.
+ */
+Sema.prototype._checkProtectedObject = function (member, context, objectClass, range) {
+  var diag;
+  if (!objectClass || member.isStatic || member.isStaticMember ||
+      member.kind === 'TypedefDecl' || member.kind === 'RecordDecl' ||
+      member.kind === 'EnumDecl' || member.kind === 'EnumeratorDecl' ||
+      member.methodKind === 'constructor' || objectClass === context ||
+      this.isDerivedFrom(objectClass, context)) {
+    return true;
+  }
+  diag = this.error('\'' + member.name + '\' is a protected member of ' +
+    this.quote(this.types.record(member.parent)), range);
+  this.note(diag, 'can only access this member on an object of type ' +
+    this.quote(this.types.record(context)), member.range);
   return false;
 };
 
@@ -740,7 +761,8 @@ Sema.prototype.actOnMemberCall = function (callee, args, range) {
     return null;
   }
   method = chosen.decl;
-  if (!this.checkAccess(method, callee.namingClass, callee.nameRange || range)) {
+  if (!this.checkAccess(method, callee.namingClass, callee.nameRange || range, null,
+      objType.decl)) {
     return null;
   }
   converted = chosen.args;

@@ -20,14 +20,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
 | 5   | Parser and AST                          | In progress  | 12 / 13  |
-| 6   | Semantic analysis                       | In progress  | 11 / 14  |
+| 6   | Semantic analysis                       | In progress  | 12 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 15   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 70 / 125 items done.**
+**Overall: 71 / 125 items done.**
 
 ---
 
@@ -132,8 +132,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Function overload resolution (D-047; user-defined conversions D-053).
 - [x] Constructors, destructors and object lifetime rules (D-051; destructor calls are
   emitted in Phase 7).
-- [~] Access control: `public` / `protected` / `private` (D-050; inheritance and friends
-  pending).
+- [x] Access control: `public` / `protected` / `private`, through inheritance and friends,
+  protected access restricted to the derived class's objects (D-050, D-052, D-054, D-067).
 - [x] `friend` functions and classes (D-054).
 - [x] Virtual functions and overriding (D-052).
 - [x] `auto` type deduction and lambda captures (D-055, D-057).
@@ -272,3 +272,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Templates T5c: out-of-line members of templates (D-065).
 - **2026-11-20** — Templates T5d: dependent names and values (D-066); templates item done,
   remaining template features moved to Phase 10.
+- **2026-11-20** — Access control completed (D-067).

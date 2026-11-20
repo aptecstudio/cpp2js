@@ -1307,6 +1307,20 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Reason**: covers the standard type-trait / SFINAE idioms; the
   deferred features are rare in user code.
 
+### D-067 — Protected access through objects (11.4)
+
+- **Status**: Accepted (agent, 2026-11-20).
+- **Decision**: a protected non-static member that is accessible only
+  because the current class derives from its class may be used only on
+  an object of the current class (or of a class derived from it); the
+  object class is passed to `checkAccess` by member accesses and member
+  calls; static members, types, enumerators and constructors are exempt.
+  The error names the declaring class with Clang's note `can only access
+  this member on an object of type 'E'`. A member made inaccessible by
+  private inheritance further up keeps the note `constrained by private
+  inheritance here`.
+- **Reason**: completes C++11 clause 11 with Clang's diagnostics.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

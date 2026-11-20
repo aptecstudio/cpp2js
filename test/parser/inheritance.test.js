@@ -99,6 +99,18 @@ test('applies access through inheritance', function () {
   ok(base + 'struct D : Base {};\nvoid f(D &d) { Base &b = d; d.q = 1; }');
 });
 
+test('restricts protected access to objects of the derived class', function () {
+  var base = 'class A { protected: int p; static int s; void m(); };\n';
+  ok(base + 'struct E : A { void k(E &e) { p = 1; A::p = 2; e.p = 3; e.m(); s = 4; A::s = 5; } };');
+  assert.deepEqual(errorsOf(base + 'struct E : A { void k(A &a) { a.p = 1; a.m(); } };'),
+    ['\'p\' is a protected member of \'A\'', '\'m\' is a protected member of \'A\'']);
+  assert.deepEqual(parse(base + 'struct E : A { void k(A &a) { a.p = 1; } };').bag.getAll()[0]
+    .notes[0].message, 'can only access this member on an object of type \'E\'');
+  assert.deepEqual(parse('class A { public: int q; };\nclass C : private A {};\n' +
+    'class D : public C { void m() { q = 1; } };').bag.getAll()[0].notes[0].message,
+    'constrained by private inheritance here');
+});
+
 test('checks overriding', function () {
   assert.deepEqual(errorsOf('struct B { void f(); };\nstruct D : B { void f() override; };'),
     ['\'f\' marked \'override\' but does not override any member functions']);
