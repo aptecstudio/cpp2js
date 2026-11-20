@@ -1223,6 +1223,16 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   member initializers and lambda captures; diagnosing unexpanded packs in
   templates that are never instantiated.
 
+### D-063 — Alias templates
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T5).
+- **Decision**: `template <params> using A = type-id;` stores its tokens;
+  `A<args>` re-parses the type-id with the parameters bound and is that
+  type (aliases are transparent, 14.5.7/2). Results with complete
+  arguments are cached; with dependent arguments (in patterns) the result
+  is the dependent type itself, so deduction sees through the alias.
+- **Reason**: same token-replay design as D-059; no alias node is needed.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

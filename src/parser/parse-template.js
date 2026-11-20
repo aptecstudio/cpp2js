@@ -795,9 +795,38 @@ Parser.prototype._instantiationKeyOf = function () {
   return keys.join(';');
 };
 
-/** Alias templates come in step T5. */
-Parser.prototype.instantiateAliasTemplate = function () {
-  this.fail('alias templates are not supported yet');
+/**
+ * `template <params> using A = type-id;`: `A<args>` is the type-id with
+ * the parameters bound (14.5.7). Aliases are transparent, so with
+ * dependent arguments the result is a dependent type that deduction sees
+ * through.
+ *
+ * @returns {Object} The aliased type.
+ */
+Parser.prototype.instantiateAliasTemplate = function (tmpl, args) {
+  var dependent = this.sema.isDependentArgumentList(args);
+  var key = dependent ? null : this.sema.instantiationKey(args);
+  var state;
+  var type;
+  if (key !== null && tmpl.instantiations[key]) {
+    return tmpl.instantiations[key];
+  }
+  state = this._saveState();
+  this._resetForInstantiation();
+  try {
+    this._pos = tmpl.tokenStart;
+    this.sema.scope = this.sema.bindTemplateParameters(tmpl, args);
+    this.next();
+    this.next();
+    this.expectPunct('=');
+    type = this.parseTypeId();
+  } finally {
+    this._restoreState(state);
+  }
+  if (key !== null) {
+    tmpl.instantiations[key] = type;
+  }
+  return type;
 };
 
 // ---------------------------------------------------------------------------

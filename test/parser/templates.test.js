@@ -233,3 +233,14 @@ test('reports misused parameter packs', function () {
   assert.deepEqual(errorsOf('template <class... Ts, class U> struct S {};'),
     ['template parameter pack must be the last template parameter']);
 });
+
+test('substitutes alias templates', function () {
+  var r = ok('template <class T> struct Box { T v; };\ntemplate <class T> using B = Box<T>;\n' +
+    'template <class T> using Ptr = T *;\ntemplate <class T, int N> using Arr = T[N];\n' +
+    'template <class T> int take(B<T> b) { return 1; }\n' +
+    'template <class... Ts> struct L {};\ntemplate <class... Ts> using LL = L<int, Ts...>;\n' +
+    'B<int> b; Ptr<char> p; Arr<int, 3> a; LL<char> l;\nint x = b.v + take(b);');
+  assert.deepEqual(lines(r, /^VarDecl [bpal] /), ['VarDecl b \'Box<int>\'',
+    'VarDecl p \'char *\'', 'VarDecl a \'int [3]\'', 'VarDecl l \'L<int, char>\'']);
+  assert.deepEqual(lines(r, /^FunctionDecl take/), ['FunctionDecl take \'int (Box<int>)\'']);
+});
