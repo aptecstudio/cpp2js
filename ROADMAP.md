@@ -117,9 +117,9 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Enumerations (including `enum class`) (D-049).
 - [x] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas, `decltype`,
   `static_assert` (D-055, D-056, D-057).
-- [~] Templates (D-059 to D-064): class and function templates, specializations,
-  variadic, alias and member templates done; out-of-line members of class templates to
-  do.
+- [~] Templates (D-059 to D-065): class and function templates, specializations,
+  variadic, alias and member templates, out-of-line members done; dependent names
+  (`typename T::x`) to check.
 - [ ] Syntax error recovery and diagnostics.
 - [x] `__js__` statements/expressions in the AST (D-026, D-058).
 - [x] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
@@ -267,3 +267,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Templates T4: variadic templates (D-062).
 - **2026-11-20** — Templates T5a: alias templates (D-063).
 - **2026-11-20** — Templates T5b: member templates (D-064).
+- **2026-11-20** — Templates T5c: out-of-line members of templates (D-065).

@@ -271,3 +271,39 @@ test('uses constructor templates and member templates of class templates', funct
   ok('struct S { template <class U> struct In { U u; }; template <class U> using P = U *; };\n' +
     'S::In<int> i; S::P<char> p; int x = i.u; char *q = p;');
 });
+
+test('instantiates out-of-line members of class templates', function () {
+  var r = ok('template <class T> struct V {\n  T v; T get() const; void set(T x); static int n;\n' +
+    '  V(); V(T a, T b);\n  template <class U> U conv(U k) const;\n};\n' +
+    'int early() { V<int> a; return a.conv(1); }\n' +
+    'template <class T> T V<T>::get() const { return v; }\n' +
+    'template <class X> void V<X>::set(X x) { v = x; }\n' +
+    'template <class T> int V<T>::n = 3;\n' +
+    'template <class T> V<T>::V() : v() {}\n' +
+    'template <class T> V<T>::V(T a, T b) : v(a + b) {}\n' +
+    'template <class T> template <class U> U V<T>::conv(U y) const { return U(v) + y; }\n' +
+    'int f() { V<int> a; V<int> b(1, 2); a.set(2); return a.get() + V<int>::n + b.v + ' +
+    '(int)a.conv(2.5); }');
+  assert.deepEqual(lines(r, /redecl/), [
+    'VarDecl n \'int\' redecl copy-init',
+    'FunctionDecl V \'void ()\' redecl public constructor',
+    'FunctionDecl conv \'int (int) const\' redecl public',
+    'FunctionDecl V \'void (int, int)\' redecl public constructor',
+    'FunctionDecl set \'void (int)\' redecl public', 'FunctionDecl get \'int () const\' redecl public']);
+  assert.deepEqual(lines(r, /^FunctionDecl conv/), ['FunctionDecl conv \'int (int) const\' redecl public',
+    'FunctionDecl conv \'double (double) const\' public']);
+});
+
+test('defines member templates out of line', function () {
+  var r = ok('struct S { template <class T> T get(T x) const; template <class T> static T make(); ' +
+    'int k; };\ntemplate <class T> T S::get(T y) const { return y + k; }\n' +
+    'template <class T> T S::make() { return T(); }\nint f() { S s; return s.get(1) + S::make<int>(); }');
+  assert.deepEqual(lines(r, /^FunctionDecl (get|make)/), ['FunctionDecl get \'int (int) const\' public',
+    'FunctionDecl make \'int ()\' public']);
+  assert.deepEqual(errorsOf('struct S { template <class T> T get(T x) const; };\n' +
+    'template <class T> T S::get(T y) { return y; }'),
+    ['out-of-line definition of \'get\' does not match any declaration in struct \'S\'']);
+  assert.deepEqual(errorsOf('template <class T> struct P { void f(); };\n' +
+    'template <class T> struct P<T *> { void f(); };\ntemplate <class T> void P<T *>::f() {}'),
+    ['out-of-line members of partial specializations are not supported yet']);
+});

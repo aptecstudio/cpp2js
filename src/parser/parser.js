@@ -20,6 +20,7 @@ var TokenKind = require('../lexer/lexer').TokenKind;
 var ast = require('../ast/nodes');
 var Sema = require('../semantic/sema').Sema;
 var T = require('../semantic/types');
+var Scope = require('../semantic/scope').Scope;
 
 /** Words that start a builtin type specifier. */
 var BUILTIN_TYPE_WORDS = {
@@ -716,8 +717,8 @@ Parser.prototype.parseAliasDeclaration = function () {
  * decl-specifier-seq init-declarator-list ; or a function definition.
  */
 Parser.prototype.parseSimpleDeclaration = function () {
-  var outOfLine = this.sema.scope.kind === 'namespace' ? this.parseOutOfLineConstructor() :
-    null;
+  var outOfLine = this.sema.scope.kind === 'namespace' || this.sema.scope.kind === 'template' ?
+    this.parseOutOfLineConstructor() : null;
   var spec;
   if (outOfLine) {
     return outOfLine;
@@ -1326,7 +1327,11 @@ Parser.prototype.parseDeclarator = function (abstract) {
     // After a qualified declarator-id, names are looked up in the scope of
     // the qualifier (C++11 3.4.1/8): `int S::arr[k]`, `void S::f(T x)`.
     savedScope = this.sema.scope;
-    this.sema.scope = declarator.qualifier.scope;
+    // In an out-of-line member of a class template, the parameters of the
+    // definition stay visible behind the class.
+    this.sema.scope = savedScope.kind === 'template' &&
+      declarator.qualifier.kind === 'RecordDecl' ?
+      new Scope('class', savedScope, declarator.qualifier) : declarator.qualifier.scope;
     try {
       this._parseDeclaratorSuffixes(declarator, abstract);
     } finally {
@@ -1695,7 +1700,9 @@ Parser.prototype._parseOutOfLineMember = function (spec, declarator) {
       this._skipBraces();
       return [];
     }
-    this.parseFunctionBody(decl);
+    if (!this._deferFunctionTemplateBody(decl)) {
+      this.parseFunctionBody(decl);
+    }
   } finally {
     this.sema.actOnFinishQualifiedDeclaration(saved);
   }

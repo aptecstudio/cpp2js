@@ -1257,6 +1257,34 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Not yet**: conversion function templates, out-of-line definitions of
   member templates, explicit specializations of members.
 
+### D-065 — Out-of-line members of templates
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T5).
+- **Decision**:
+  - `template <params> ... X<params>::member ...` (functions,
+    constructors, static data members, and `template <...> template <...>`
+    member templates) is recognized by its qualifier, stored on the
+    primary class template (`outOfLine`) and replayed for every
+    instantiation of the primary, existing or later, with the
+    definition's own parameter names bound to the instantiation's
+    arguments; bodies are deferred and linked to the in-class declaration
+    (`pendingDefinition`), so uses before or after the definition
+    instantiate it; the class scope used for the declarator and body
+    keeps the definition's parameters visible behind the class members
+    (14.6.1/9);
+  - an out-of-line member template definition (`template <class U> U
+    S::f(U)`, also inside a replay for `X<int>`) is matched to the member
+    template by signature pattern; its tokens are copied after the end of
+    the token stream without the qualifier, and specializations are
+    parsed from that copy like the in-class form (`static` and
+    `explicit` come from the in-class declaration);
+  - members of partial specializations defined out of line are rejected
+    for now.
+- **Reason**: keeps the single token-replay mechanism (D-059); copying
+  tokens avoids a second, qualified, member-declaration parser.
+- **Discarded**: recording member bodies at class level by scanning
+  ahead (out-of-line definitions can follow uses).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

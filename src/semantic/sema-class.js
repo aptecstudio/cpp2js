@@ -788,6 +788,12 @@ Sema.prototype.startClassMemberDefinition = function (record, name, range) {
       this.describeQualifier(record), range);
     return null;
   }
+  if (this.scope.kind === ScopeKind.TEMPLATE) {
+    // Out-of-line member of a class template: the class members hide the
+    // template parameters (14.6.1/9).
+    this.scope = new Scope(ScopeKind.CLASS, this.scope, record);
+    return saved;
+  }
   if (this.scope.kind !== ScopeKind.NAMESPACE) {
     this.error('cannot define or redeclare \'' + name + '\' here because ' +
       this.describeQualifier(record) + ' is not a namespace', range);

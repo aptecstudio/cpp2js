@@ -300,7 +300,11 @@ Sema.prototype.startClassInstantiation = function (target, tag, range) {
  * instantiation at the end of the translation unit.
  */
 Sema.prototype.requireDefinition = function (decl) {
-  var root = decl;
+  var root = decl && decl.pendingDefinition ? decl.pendingDefinition : decl;
+  if (decl && !decl.pendingBody && !decl.pendingDefinition) {
+    // An out-of-line definition seen later is instantiated then.
+    decl.definitionRequired = true;
+  }
   while (root && !root.pendingBody && root.previous) {
     root = root.previous;
   }

@@ -475,6 +475,7 @@ Parser.prototype.parseMemberInitializers = function (ctor) {
 Parser.prototype.parseOutOfLineConstructor = function () {
   var i = 0;
   var j;
+  var templateId;
   var tok;
   var info;
   var qualifier = null;
@@ -490,11 +491,24 @@ Parser.prototype.parseOutOfLineConstructor = function () {
   // qualifier, a class.
   for (j = i; ; j += 2) {
     tok = this.peek(j);
-    if (tok.kind !== TokenKind.IDENTIFIER || !this.isPunct('::', j + 1)) {
+    if (tok.kind !== TokenKind.IDENTIFIER) {
       return null;
     }
     info = qualifier ? this.sema.classifyQualifiedName(qualifier, tok.value) :
       this.sema.classifyName(tok.value);
+    if (info.kind === 'template' && info.decls[0].templateKind === 'class' &&
+        this.isPunct('<', j + 1)) {
+      // `X<T>::X(...)` in an out-of-line member of a class template.
+      templateId = this.parseTemplateIdAt(this._pos + j, info.decls[0]);
+      if (!templateId.type || !T.isRecord(templateId.type)) {
+        return null;
+      }
+      j = templateId.end - this._pos - 1;
+      info = { kind: 'type', type: templateId.type };
+    }
+    if (!this.isPunct('::', j + 1)) {
+      return null;
+    }
     if (info.kind === 'namespace') {
       qualifier = this.sema.resolveNamespace(info.decls[0]);
     } else if (info.kind === 'type' && info.type && T.isRecord(info.type)) {
@@ -537,7 +551,9 @@ Parser.prototype.parseOutOfLineConstructor = function () {
       this.expectPunct(';', 'after declaration');
       return [];
     }
-    this.parseFunctionBody(decl);
+    if (!this._deferFunctionTemplateBody(decl)) {
+      this.parseFunctionBody(decl);
+    }
   } finally {
     this.sema.actOnFinishQualifiedDeclaration(saved);
   }

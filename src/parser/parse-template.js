@@ -302,6 +302,7 @@ Parser.prototype._checkTemplateParameters = function (params) {
  * @returns {Object} Info for Sema.actOnTemplateDecl.
  */
 Parser.prototype._templatedDeclarationInfo = function (params, keyword, record) {
+  var outOf;
   var tok = this.peek();
   var nameTok;
   var isDefinition;
@@ -339,8 +340,17 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword, record) 
     return { name: nameTok.value, params: params, templateKind: 'alias', isDefinition: true,
       range: this.rangeOf(nameTok) };
   }
+  if (!record) {
+    outOf = this._outOfLineClassTemplate(params);
+    if (outOf) {
+      return this._registerOutOfLine(outOf, params);
+    }
+  }
   if (this.isKeyword('template')) {
-    this.fail('member templates of class templates are not supported yet');
+    this.fail('expected an out-of-line member template definition of a class template');
+  }
+  if (!record && this._outOfLineMemberTemplate(params)) {
+    return { partial: true };
   }
   if (record && this._startsConstructor(record)) {
     if (this.isPunct('~') || this.isPunct('~', 1)) {
@@ -356,6 +366,9 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword, record) 
     this.fail('conversion function templates are not supported yet');
   }
   nameTok = this._functionTemplateName();
+  if (this.isPunct('::', this._templateNameOffset - 1)) {
+    this.fail('qualified function template declarations are not supported yet', nameTok);
+  }
   pattern = this._parseSignaturePattern(params);
   this._skipDefinitionRest();
   return { name: nameTok.value, params: params, templateKind: 'function',
@@ -419,10 +432,10 @@ Parser.prototype._parseSignaturePattern = function (params, constructorOf) {
     required = suffix.params.indexOf(pack);
     return { type: type, requiredArgs: required, key: this.sema.patternKey(type) + '...',
       packAt: suffix.params.indexOf(pack), packParam: pack.packParam,
-      isStatic: spec.storage === 'static' };
+      isStatic: spec.storage === 'static', isExplicit: !!spec.isExplicit };
   }
   return { type: type, requiredArgs: required, key: this.sema.patternKey(type),
-    isStatic: spec.storage === 'static' };
+    isStatic: spec.storage === 'static', isExplicit: !!spec.isExplicit };
 };
 
 /**
@@ -455,9 +468,7 @@ Parser.prototype._functionTemplateName = function () {
     }
     if (tok.kind === TokenKind.PUNCT && tok.value === '(') {
       if (depth === 0 && prev && prev.kind === TokenKind.IDENTIFIER) {
-        if (this.isPunct('::', i - 2)) {
-          this.fail('out-of-line members of class templates are not supported yet');
-        }
+        this._templateNameOffset = i - 1;
         return prev;
       }
       if (depth === 0 && prev && prev.kind === TokenKind.KEYWORD &&
@@ -800,6 +811,14 @@ Parser.prototype.instantiateClassTemplate = function (tmpl, args, range) {
   }
   record = tmpl.instantiations[key];
   this.sema.finishClassInstantiation(record);
+  if (record && partial) {
+    record.fromPartial = true;
+  }
+  if (record && !partial && record.complete) {
+    (tmpl.outOfLine || []).forEach(function (entry) {
+      this._replayOutOfLine(tmpl, record, entry);
+    }, this);
+  }
   return this.sema.types.record(record);
 };
 
@@ -923,7 +942,8 @@ Parser.prototype.processPendingInstantiations = function () {
     } finally {
       this._restoreState(state);
     }
-    if (decl.templateOf && this.sema.translationUnit.instantiations.indexOf(decl) === -1) {
+    if ((decl.templateOf || decl.isInstantiatedDefinition) &&
+        this.sema.translationUnit.instantiations.indexOf(decl) === -1) {
       this.sema.translationUnit.instantiations.push(decl);
     }
     queue = this.sema.pendingInstantiations;
@@ -982,8 +1002,10 @@ Parser.prototype.instantiateFunctionTemplate = function (tmpl, args, sfinae) {
   this._resetForInstantiation();
   saved = sfinae ? this._swapDiagnostics() : null;
   try {
-    this._pos = tmpl.tokenStart;
-    bound = this.sema.bindTemplateParameters(tmpl, args);
+    // An out-of-line definition replaces the in-class declaration.
+    this._pos = tmpl.definitionStart || tmpl.tokenStart;
+    bound = this.sema.bindTemplateParameters(tmpl.definitionParams ?
+      Object.create(tmpl, { params: { value: tmpl.definitionParams } }) : tmpl, args);
     this.sema.scope = bound;
     this._functionInstantiation = (this._functionInstantiation || 0) + 1;
     decls = this.withRecovery(function () {
@@ -1037,7 +1059,15 @@ Parser.prototype._parseMemberSpecialization = function (tmpl, bound) {
     record.constructors = constructors;
     record.access = access;
   }
-  return decl && members.indexOf(decl) === -1 ? [decl] : [];
+  if (!decl || members.indexOf(decl) !== -1) {
+    return [];
+  }
+  if (tmpl.pattern) {
+    // `static` and `explicit` appear only on the in-class declaration.
+    decl.isStatic = !!tmpl.pattern.isStatic;
+    decl.isExplicit = decl.isExplicit || !!tmpl.pattern.isExplicit;
+  }
+  return [decl];
 };
 
 /**
@@ -1051,7 +1081,12 @@ Parser.prototype._deferFunctionTemplateBody = function (decl) {
     return false;
   }
   decl.pendingBody = { pos: this._pos, scope: this.sema.scope };
-  this._skipBraces();
+  if (this.isPunct(':')) {
+    // A constructor's member initializers are part of the body.
+    this._skipFunctionBody();
+  } else {
+    this._skipBraces();
+  }
   return true;
 };
 
@@ -1205,5 +1240,330 @@ Parser.prototype._expandTemplateArgument = function (tmpl, position, dots) {
     args[0].packParam = packs[0].templateParamIndex;
   }
   return args;
+};
+
+// ---------------------------------------------------------------------------
+// Out-of-line members of class templates (14.5.1.1-14.5.1.3, 14.5.2/1).
+
+/**
+ * Index (offset from the current token) of the `>` matching the `<` at
+ * offset `i`, or -1.
+ */
+Parser.prototype._matchingAngle = function (i) {
+  var depth = 0;
+  var tok;
+  for (;; i++) {
+    tok = this.peek(i);
+    if (tok.kind === TokenKind.EOF) {
+      return -1;
+    }
+    if (tok.kind !== TokenKind.PUNCT) {
+      continue;
+    }
+    if (tok.value === '<') {
+      depth++;
+    } else if (tok.value === '>') {
+      depth--;
+    } else if (tok.value === '>>') {
+      depth -= 2;
+    } else if (tok.value === ';' || tok.value === '{') {
+      return -1;
+    }
+    if (depth <= 0) {
+      return depth === 0 ? i : -1;
+    }
+  }
+};
+
+/**
+ * Finds `X<params>::` in the declaration at the current position, where X
+ * is a class template and the arguments name the parameters just
+ * declared: an out-of-line member of X. With a nested
+ * `template <...>` (a member template of X), the qualifier is searched
+ * after it.
+ *
+ * @returns {?{template: Object}}
+ */
+Parser.prototype._outOfLineClassTemplate = function (params) {
+  var i = 0;
+  var tok;
+  var info;
+  var close;
+  var names = params.map(function (p) { return p.name; });
+  var k;
+  var mentions;
+  var expected;
+  var got;
+  if (this.isKeyword('template') && this.isPunct('<', 1)) {
+    i = this._matchingAngle(1) + 1;
+    if (i <= 0) {
+      return null;
+    }
+  }
+  for (;; i++) {
+    tok = this.peek(i);
+    if (tok.kind === TokenKind.EOF || (tok.kind === TokenKind.PUNCT && (tok.value === '(' ||
+        tok.value === ';' || tok.value === '=' || tok.value === '{'))) {
+      return null;
+    }
+    if (tok.kind !== TokenKind.IDENTIFIER || !this.isPunct('<', i + 1) ||
+        this.isKeyword('typename', i - 1)) {
+      continue;
+    }
+    info = this.sema.classifyName(tok.value);
+    if (info.kind !== 'template' || info.decls[0].templateKind !== 'class') {
+      continue;
+    }
+    close = this._matchingAngle(i + 1);
+    if (close < 0 || !this.isPunct('::', close + 1)) {
+      continue;
+    }
+    mentions = false;
+    got = [];
+    for (k = i + 2; k < close; k++) {
+      if (this.peek(k).kind === TokenKind.IDENTIFIER && names.indexOf(this.peek(k).value) !== -1) {
+        mentions = true;
+      }
+      got.push(this.peek(k).value);
+    }
+    if (!mentions) {
+      continue;
+    }
+    expected = [];
+    params.forEach(function (p, index) {
+      if (index) {
+        expected.push(',');
+      }
+      expected.push(p.name);
+      if (p.isPack) {
+        expected.push('...');
+      }
+    });
+    if (got.join(' ') !== expected.join(' ')) {
+      this.fail('out-of-line members of partial specializations are not supported yet', tok);
+    }
+    return { template: info.decls[0] };
+  }
+};
+
+/**
+ * Records an out-of-line member of a class template; it is replayed for
+ * every instantiation of the primary template, now and later.
+ */
+Parser.prototype._registerOutOfLine = function (outOf, params) {
+  var tmpl = outOf.template;
+  var entry = { params: params, tokenStart: this._pos, nested: this.isKeyword('template') };
+  var key;
+  var record;
+  this._skipDefinitionRest();
+  this.acceptPunct(';');
+  tmpl.outOfLine = (tmpl.outOfLine || []).concat([entry]);
+  for (key in tmpl.instantiations) {
+    record = tmpl.instantiations[key];
+    if (record && record.kind === 'RecordDecl' && record.complete &&
+        !record.isExplicitSpecialization && !record.fromPartial) {
+      this._replayOutOfLine(tmpl, record, entry);
+    }
+  }
+  return { partial: true };
+};
+
+/** Parses an out-of-line member for one instantiation of its class. */
+Parser.prototype._replayOutOfLine = function (tmpl, record, entry) {
+  var state = this._saveState();
+  var savedRecord = this._outOfLineRecord;
+  var self = this;
+  var decls = null;
+  this._resetForInstantiation();
+  try {
+    this._pos = entry.tokenStart;
+    this.sema.scope = this.sema.bindTemplateParameters(Object.create(tmpl,
+      { params: { value: entry.params } }), record.templateArgs);
+    this._functionInstantiation = (this._functionInstantiation || 0) + 1;
+    this._outOfLineRecord = record;
+    decls = this.withRecovery(function () {
+      return entry.nested ? self.parseTemplateDeclaration() : self.parseSimpleDeclaration();
+    });
+  } finally {
+    this._functionInstantiation--;
+    this._outOfLineRecord = savedRecord;
+    this._restoreState(state);
+  }
+  (decls || []).forEach(function (decl) {
+    if (decl && decl.kind === 'FunctionDecl' && decl.previous && decl.pendingBody) {
+      // Uses of the in-class declaration instantiate this definition.
+      decl.isInstantiatedDefinition = true;
+      decl.previous.pendingDefinition = decl;
+      if (decl.previous.definitionRequired) {
+        self.sema.requireDefinition(decl);
+      }
+    } else if (decl && decl.kind === 'VarDecl') {
+      // Static data member definitions are emitted with the instantiations.
+      decl.isInstantiatedDefinition = true;
+      self.sema.translationUnit.instantiations.push(decl);
+    }
+  });
+};
+
+/**
+ * Out-of-line definition of a member template of a (non-template or
+ * instantiated) class: `template <class U> U S::f(U x) { ... }`. Its
+ * tokens are copied without the qualifier, so that specializations are
+ * parsed like the in-class form.
+ *
+ * @returns {boolean} Whether the declaration was one.
+ */
+Parser.prototype._outOfLineMemberTemplate = function (params) {
+  var start = this._pos;
+  var nameTok = this._functionTemplateName();
+  var nameIndex = this._pos + this._templateNameOffset;
+  var qualStart;
+  var qualified;
+  var record;
+  var end;
+  var copyStart;
+  var candidates;
+  var pattern;
+  var match;
+  var saved;
+  var self = this;
+  if (!this.isPunct('::', this._templateNameOffset - 1)) {
+    return false;
+  }
+  qualStart = this._qualifierStart(nameIndex);
+  this._pos = qualStart;
+  qualified = this.parseQualifiedName();
+  this._pos = start;
+  record = qualified.qualifier;
+  if (!record || record.kind !== 'RecordDecl') {
+    return false;
+  }
+  this._skipDefinitionRest();
+  end = this._pos;
+  copyStart = this._copyTokens([[start, qualStart], [nameIndex, end]]);
+  candidates = nameTok.value === record.name ? record.constructorTemplates || [] :
+    record.scope.lookupLocal(nameTok.value).filter(function (d) {
+      return d.kind === 'TemplateDecl' && d.templateKind === 'function';
+    });
+  saved = { pos: this._pos, scope: this.sema.scope };
+  try {
+    this._pos = copyStart;
+    this.sema.scope = record.scope;
+    pattern = this._parseSignaturePattern(params, nameTok.value === record.name ? record : null);
+  } finally {
+    this._pos = saved.pos;
+    this.sema.scope = saved.scope;
+  }
+  match = candidates.filter(function (d) {
+    return d.pattern && pattern && d.pattern.key === pattern.key &&
+      d.params.length === params.length;
+  })[0];
+  if (!match) {
+    this.sema.error('out-of-line definition of \'' + nameTok.value + '\' does not ' +
+      'match any declaration in ' + this.sema.describeQualifier(record), this.rangeOf(nameTok));
+    return true;
+  }
+  if (match.definitionStart || match.isDefinition) {
+    this.sema.note(this.sema.error('redefinition of \'' + nameTok.value + '\'',
+      this.rangeOf(nameTok)), 'previous definition is here', match.range);
+    return true;
+  }
+  match.definitionStart = copyStart;
+  match.definitionParams = params;
+  match.isDefinition = true;
+  // Specializations made before the definition get it now.
+  Object.keys(match.instantiations).forEach(function (key) {
+    var spec = match.instantiations[key];
+    var definition;
+    if (!spec) {
+      return;
+    }
+    definition = self._redefineSpecialization(match, spec);
+    if (definition) {
+      spec.pendingDefinition = definition;
+      if (spec.definitionRequired) {
+        self.sema.requireDefinition(definition);
+      }
+    }
+  });
+  return true;
+};
+
+/** Instantiates the definition of an existing member specialization. */
+Parser.prototype._redefineSpecialization = function (tmpl, spec) {
+  var state = this._saveState();
+  var self = this;
+  var decls = null;
+  this._resetForInstantiation();
+  try {
+    this._pos = tmpl.definitionStart;
+    this._functionInstantiation = (this._functionInstantiation || 0) + 1;
+    decls = this.withRecovery(function () {
+      return self._parseMemberSpecialization(tmpl, self.sema.bindTemplateParameters(
+        Object.create(tmpl, { params: { value: tmpl.definitionParams } }), spec.templateArgs));
+    });
+  } finally {
+    this._functionInstantiation--;
+    this._restoreState(state);
+  }
+  if (decls && decls[0]) {
+    decls[0].templateOf = tmpl;
+    decls[0].templateArgs = spec.templateArgs;
+    decls[0].qualifiedName = spec.qualifiedName;
+    decls[0].previous = spec;
+    return decls[0];
+  }
+  return null;
+};
+
+/** Start of the nested-name-specifier ending just before `nameIndex`. */
+Parser.prototype._qualifierStart = function (nameIndex) {
+  var j = nameIndex - 1;
+  var tokens = this._tokens;
+  var depth;
+  while (j >= 0 && tokens[j].kind === TokenKind.PUNCT && tokens[j].value === '::') {
+    j--;
+    if (tokens[j].kind === TokenKind.PUNCT && (tokens[j].value === '>' ||
+        tokens[j].value === '>>')) {
+      depth = 0;
+      for (; j >= 0; j--) {
+        if (tokens[j].value === '>' && tokens[j].kind === TokenKind.PUNCT) {
+          depth++;
+        } else if (tokens[j].value === '>>' && tokens[j].kind === TokenKind.PUNCT) {
+          depth += 2;
+        } else if (tokens[j].value === '<' && tokens[j].kind === TokenKind.PUNCT) {
+          depth--;
+          if (depth === 0) {
+            break;
+          }
+        }
+      }
+      j--;
+    }
+    if (tokens[j].kind !== TokenKind.IDENTIFIER) {
+      return j + 1;
+    }
+    j--;
+  }
+  return j + 1;
+};
+
+/**
+ * Appends a copy of the token ranges `[[start, end], ...]` after the end
+ * of the token stream, terminated by its own EOF, and returns the index
+ * of the copy.
+ */
+Parser.prototype._copyTokens = function (ranges) {
+  var tokens = this._tokens;
+  var start = tokens.length;
+  var eof = tokens[tokens.length - 1];
+  ranges.forEach(function (r) {
+    var i;
+    for (i = r[0]; i < r[1]; i++) {
+      tokens.push(tokens[i]);
+    }
+  });
+  tokens.push(eof);
+  return start;
 };
 
