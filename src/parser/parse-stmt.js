@@ -108,6 +108,11 @@ Parser.prototype.parseStatement = function () {
           this.isPunct('{') ? this.parseBracedInitList() : this.parseExpression();
         this.expectPunct(';', 'after return statement');
         return this.sema.actOnReturnStatement(value, this.rangeFrom(tok), hadValue);
+      case '__js__':
+        if (this.isPunct('(', 1)) {
+          return this.parseJsStatement();
+        }
+        break;
       case 'try':
       case 'catch':
         this.fail('exceptions are not supported yet');
@@ -423,5 +428,61 @@ Parser.prototype._finishRangeFor = function (keyword, open, head) {
   }
   node.range = this.rangeFrom(keyword);
   return node;
+};
+
+/** The string literal of a `__js__`. */
+Parser.prototype._jsCodeLiteral = function () {
+  if (this.peek().kind !== TokenKind.STRING) {
+    this.fail('expected a string literal with JavaScript code');
+  }
+  return this.next().value;
+};
+
+/** `(expr), (expr)` or `"c" (expr), ...` operand lists of `__js__`. */
+Parser.prototype._jsOperands = function (withConstraints) {
+  var list = [];
+  var start;
+  var constraint;
+  var open;
+  var expr;
+  if (this.isPunct(':') || this.isPunct(')')) {
+    return list;
+  }
+  for (;;) {
+    start = this.peek();
+    constraint = null;
+    if (this.peek().kind === TokenKind.STRING) {
+      constraint = String.fromCharCode.apply(null, this.next().value.units);
+    } else if (withConstraints) {
+      this.fail('expected an output constraint such as "="');
+    }
+    open = this.expectPunct('(', 'before inline JavaScript operand');
+    expr = this.parseExpression();
+    this.expectPunct(')', '', open);
+    list.push({ constraint: constraint, expr: expr, range: this.rangeFrom(start) });
+    if (!this.acceptPunct(',')) {
+      return list;
+    }
+  }
+};
+
+/** `__js__ ( "code" [: outputs [: inputs]] ) ;` (D-026) */
+Parser.prototype.parseJsStatement = function () {
+  var keyword = this.next();
+  var open = this.next();
+  var literal = this._jsCodeLiteral();
+  var outputs = [];
+  var inputs = [];
+  if (this.acceptPunct(':')) {
+    outputs = this._jsOperands(true);
+    if (this.acceptPunct(':')) {
+      inputs = this._jsOperands(false);
+    }
+  }
+  this.expectPunct(')', '', open);
+  this.expectPunct(';', 'after inline JavaScript');
+  return this.sema.actOnJsStatement(literal, outputs, inputs.map(function (i) {
+    return i.expr;
+  }), this.rangeFrom(keyword));
 };
 

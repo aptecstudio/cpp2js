@@ -19,15 +19,15 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 10 / 13  |
-| 6   | Semantic analysis                       | In progress  | 10 / 14  |
+| 5   | Parser and AST                          | In progress  | 11 / 13  |
+| 6   | Semantic analysis                       | In progress  | 11 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 67 / 124 items done.**
+**Overall: 69 / 124 items done.**
 
 ---
 
@@ -119,7 +119,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   `static_assert` (D-055, D-056, D-057).
 - [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
-- [ ] `__js__` statements/expressions in the AST (D-026).
+- [x] `__js__` statements/expressions in the AST (D-026, D-058).
 - [x] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
 
 ## Phase 6 — Semantic analysis
@@ -138,7 +138,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] `auto` type deduction and lambda captures (D-055, D-057).
 - [ ] `extern "C"` linkage: no overloading, duplicate-name checks (D-014).
 - [ ] Semantic diagnostics.
-- [ ] `__js__`: checks of operands (lvalue outputs, types of `__js__<T>`) (D-026).
+- [x] `__js__`: checks of operands (lvalue outputs, types of `__js__<T>`) (D-026, D-058).
 - [x] `extern "JS"`: declarations only; module imports rejected on browser (D-031, D-043).
 
 ## Phase 7 — Lowering and code generation
@@ -258,3 +258,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Parser step 6a: auto, decltype, static_assert (D-055).
 - **2026-11-20** — Parser step 6b: range-based for (D-056).
 - **2026-11-20** — Parser step 6c: lambda expressions (D-057).
+- **2026-11-20** — Parser step 6d: `__js__` statements and expressions (D-058).

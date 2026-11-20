@@ -1615,6 +1615,10 @@ Sema.prototype.actOnVariableInit = function (decl, init, style) {
   if (decl.autoSpec) {
     spec = decl.autoSpec;
     decl.autoSpec = null;
+    if (!init && style) {
+      decl.type = this.types.builtin('int');
+      return;
+    }
     if (!init) {
       this.error('declaration of variable \'' + decl.name + '\' with deduced type \'auto\' ' +
         'requires an initializer', decl.range);
@@ -1643,7 +1647,9 @@ Sema.prototype.actOnVariableInit = function (decl, init, style) {
   decl.initStyle = init ? style : null;
   if (!init) {
     decl.init = null;
-    if (decl.storage === 'extern') {
+    // `style` set without `init`: an initializer was written but failed
+    // and was already reported.
+    if (decl.storage === 'extern' || style) {
       return;
     }
     if (T.isReference(decl.type)) {

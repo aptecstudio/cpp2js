@@ -182,6 +182,15 @@ function describe(node) {
     case 'LambdaCapture':
       parts.push((node.byReference ? '&' : '') + node.variable.name);
       break;
+    case 'JsStmt':
+    case 'JsExpr':
+      if (node.type) {
+        parts.push(quote(node.type), node.valueCategory);
+      }
+      parts.push(JSON.stringify((node.code || []).map(function (p) {
+        return typeof p === 'number' ? '%' + p : p;
+      }).join('')));
+      break;
     case 'BaseSpecifier':
       parts.push(node.access, T.typeToString(node.type));
       break;

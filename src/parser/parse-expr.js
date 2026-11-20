@@ -497,6 +497,9 @@ Parser.prototype.parsePrimaryExpression = function () {
         this.next();
         return this.sema.actOnThis(this.rangeOf(tok), false);
       }
+      if (tok.value === '__js__') {
+        return this.parseJsExpression();
+      }
       break;
     case TokenKind.PUNCT:
       if (tok.value === '::') {
@@ -576,5 +579,30 @@ Parser.prototype.parseLambdaExpression = function () {
     this.sema._breakableStack = savedBreakables;
   }
   return this.sema.actOnFinishLambda(info, body, this.rangeFrom(open));
+};
+
+/** `__js__ < type-id > ( "expression" [: inputs] )` (D-026) */
+Parser.prototype.parseJsExpression = function () {
+  var keyword = this.next();
+  var type;
+  var open;
+  var literal;
+  var inputs = [];
+  if (!this.isPunct('<')) {
+    this.fail(this.isPunct('(') ? 'inline JavaScript used as an expression needs a result ' +
+      'type: __js__<T>("...")' : 'expected \'<\' after \'__js__\'');
+  }
+  this.next();
+  type = this.parseTypeId();
+  this.expectPunct('>');
+  open = this.expectPunct('(');
+  literal = this._jsCodeLiteral();
+  if (this.acceptPunct(':')) {
+    inputs = this._jsOperands(false);
+  }
+  this.expectPunct(')', '', open);
+  return this.sema.actOnJsExpression(type, literal, inputs.map(function (i) {
+    return i.expr;
+  }), this.rangeFrom(keyword));
 };
 

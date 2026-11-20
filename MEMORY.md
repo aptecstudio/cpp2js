@@ -1075,6 +1075,28 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   code generation needs to build JavaScript closures (D-057 hands them
   over to Phase 7).
 
+### D-058 — `__js__` syntax details
+
+- **Status**: Accepted (agent, 2026-11-20; completes D-026).
+- **Decision**: `src/semantic/sema-js.js`:
+  - statement `__js__("code" [: outputs [: inputs]]);` with outputs
+    `"=" (lvalue)` (write) or `"+" (lvalue)` (read-write), which must be
+    modifiable lvalues, and inputs `(expr)`; expression
+    `__js__<T>("expr" [: inputs])`, a prvalue of `T` (not a reference,
+    array or function; `void` allowed); `__js__("...")` used as a value
+    without `<T>` is an error;
+  - the code is a narrow (or `u8`) string literal, possibly raw or
+    concatenated, decoded from UTF-8 to a JavaScript string and stored
+    as a list of text pieces and operand indexes (`JsStmt.code`,
+    `JsExpr.code`); operands are numbered outputs first, then inputs;
+  - **`%N` is an operand only when a digit follows `%`**; `%%` is a
+    literal `%`; any other `%` stays as written, so `a % b` needs no
+    escaping (`a %2` must be written `a % 2` or `a %%2`);
+  - scalar inputs are passed as rvalues, class objects as references
+    (JavaScript objects, D-018); operand numbers are checked.
+- **Reason**: GCC extended-asm familiarity (D-026) without making the
+  common JavaScript `%` operator awkward.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

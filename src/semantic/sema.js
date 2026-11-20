@@ -1033,3 +1033,4 @@ require('./sema-operator');
 require('./sema-friend');
 require('./sema-cxx11');
 require('./sema-lambda');
+require('./sema-js');

@@ -76,7 +76,7 @@ var NODE_KINDS = {
   ReturnStmt: { children: ['value'], props: [] },
   GotoStmt: { children: [], props: ['label', 'target'] },
   LabelStmt: { children: ['body'], props: ['name'] },
-  JsStmt: { children: ['outputs', 'inputs'], props: ['code'] },
+  JsStmt: { children: ['outputs', 'inputs'], props: ['code', 'constraints'] },
 
   // Expressions ------------------------------------------------------------
   IntegerLiteral: { children: [], props: ['value', 'type', 'valueCategory'] },
