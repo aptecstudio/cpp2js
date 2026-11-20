@@ -7,6 +7,8 @@
  */
 var Severity = {
   ERROR: 'error',
+  // Stops the compilation (the error limit was reached).
+  FATAL: 'fatal error',
   WARNING: 'warning',
   NOTE: 'note'
 };
@@ -52,7 +54,7 @@ function normalizeSpan(span) {
 function Diagnostic(severity, message, span) {
   var normalized = normalizeSpan(span);
   if (severity !== Severity.ERROR && severity !== Severity.WARNING &&
-      severity !== Severity.NOTE) {
+      severity !== Severity.NOTE && severity !== Severity.FATAL) {
     throw new TypeError('Unknown diagnostic severity: ' + severity);
   }
   this.severity = severity;

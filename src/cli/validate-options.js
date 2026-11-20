@@ -35,6 +35,15 @@ function validateOptions(options) {
   if (options.warningsAsErrors && options.ignoreWarnings) {
     errors.push('\'-Werror\' and \'-w\' cannot be used together');
   }
+  if (typeof options.errorLimit === 'string') {
+    // `--error-limit=N`: stop after N errors, 0 for no limit (D-070).
+    if (/^[0-9]+$/.test(options.errorLimit)) {
+      options.errorLimit = parseInt(options.errorLimit, 10);
+    } else {
+      errors.push('invalid value \'' + options.errorLimit + '\' for \'--error-limit\': ' +
+        'expected a non-negative integer');
+    }
+  }
   if (options.quiet && options.verbose) {
     errors.push('\'--quiet\' and \'--verbose\' cannot be used together');
   }

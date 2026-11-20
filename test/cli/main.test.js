@@ -92,3 +92,16 @@ test('reports that the pipeline is not implemented yet', function () {
   assert.equal(runCli(['a.cpp', '--check', '--quiet'], { 'a.cpp': '' }).stderr,
     'cpp2js: error: compilation is not implemented yet\n');
 });
+test('stops after --error-limit errors', function () {
+  var text = '';
+  var i;
+  var r;
+  for (i = 0; i < 5; i++) {
+    text += 'int f' + i + '() { return x' + i + '; }\n';
+  }
+  r = runCli(['--check', '--error-limit=2', 'a.cpp'], { 'a.cpp': text });
+  assert.equal(r.code, 1);
+  assert.equal(r.stderr.split('\n').filter(function (l) { return / error: /.test(l); }).length, 3);
+  assert.ok(/fatal error: too many errors emitted, stopping now/.test(r.stderr));
+  assert.ok(/2 errors generated/.test(r.stderr));
+});

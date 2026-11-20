@@ -121,3 +121,20 @@ test('bag rejects bare notes and conflicting options', function () {
     new DiagnosticBag({ warningsAsErrors: true, ignoreWarnings: true });
   }, Error);
 });
+
+test('stops at the error limit with a fatal error', function () {
+  var bag = new DiagnosticBag({ errorLimit: 2 });
+  bag.error('one');
+  bag.warning('not counted');
+  bag.error('two');
+  assert.throws(function () { bag.error('three'); }, DiagnosticBag.ErrorLimitReached);
+  assert.deepEqual(bag.getAll().map(function (d) { return d.severity + ': ' + d.message; }), [
+    'error: one', 'warning: not counted', 'error: two',
+    'fatal error: too many errors emitted, stopping now [--error-limit=]']);
+  assert.equal(bag.errorCount, 2);
+  bag = new DiagnosticBag({ errorLimit: 0 });
+  bag.error('a');
+  bag.error('b');
+  bag.error('c');
+  assert.equal(bag.errorCount, 3);
+});

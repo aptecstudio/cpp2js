@@ -1362,6 +1362,18 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Not done**: an error limit (Clang's `-ferror-limit`, default 20) would
   need a CLI flag; to be decided with the owner.
 
+### D-070 — Error limit
+
+- **Status**: Accepted (owner, 2026-11-20, poll).
+- **Decision**: `--error-limit <n>` (default 20, `0` = no limit), like
+  Clang's `-ferror-limit`: the error after the n-th is replaced by
+  `fatal error: too many errors emitted, stopping now [--error-limit=]`
+  (new severity `fatal error`, not counted in `n errors generated`) and
+  the compilation stops (`DiagnosticBag.ErrorLimitReached`, caught by
+  `compile`). Errors promoted by `-Werror` count. The throwaway bags of
+  tentative parses (SFINAE, patterns) have no limit.
+- **Discarded**: no limit (owner choice).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

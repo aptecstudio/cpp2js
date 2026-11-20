@@ -87,3 +87,13 @@ test('--check needs no output destination', function () {
   assert.deepEqual(r.warnings, []);
   assert.equal(r.options.stdOut, null);
 });
+
+test('checks and converts --error-limit', function () {
+  var r = validate(['a.cpp', '--check']);
+  assert.equal(r.options.errorLimit, 20);
+  r = validate(['a.cpp', '--check', '--error-limit=0']);
+  assert.equal(r.options.errorLimit, 0);
+  r = validate(['a.cpp', '--check', '--error-limit', 'many']);
+  assert.deepEqual(r.errors, ['invalid value \'many\' for \'--error-limit\': expected a ' +
+    'non-negative integer']);
+});

@@ -29,6 +29,7 @@ var HELP_LINES = [
   '  --check                Only syntax and type checking, no output',
   '  -Werror                Treat warnings as errors',
   '  -w                     Suppress warnings',
+  '  --error-limit <n>      Stop after n errors, 0 for no limit (default: 20)',
   '  --quiet                Print errors only',
   '  --verbose              Print the phases and the files written',
   '',

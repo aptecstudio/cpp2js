@@ -70,7 +70,8 @@ Decisions to take with the owner before writing the compiler core.
 - [~] Programmatic API `compile(options)` in `src/index.js` (loads and preprocesses inputs,
   CLI writes its outputs; later phases and `--verbose` still to do).
 - [x] Source file abstraction with line/column mapping (`src/source/source-file.js`).
-- [x] Diagnostics: errors, warnings, notes; compiler-style formatting (D-023).
+- [x] Diagnostics: errors, warnings, notes; compiler-style formatting (D-023); error limit
+  (D-070).
 - [x] Minimal in-house test runner (`npm test`), no external framework (D-022).
 - [x] Automatic ES5 check of the project's own sources, run by `npm test` (D-024).
 - [x] Fixture-based tests (C++ input -> expected JS output) (D-029).
@@ -277,3 +278,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Access control completed (D-067).
 - **2026-11-20** — `extern "C"` checks within a translation unit (D-068).
 - **2026-11-20** — Syntax error recovery (D-069); Phase 5 done.
+- **2026-11-20** — `--error-limit` (D-070).

@@ -73,6 +73,7 @@ cpp2js main.cpp --check
 | `-I <dir>`, `-D <name>[=<value>]`, `-U <name>` | Preprocessor options |
 | `--check` | Check syntax and types without generating output |
 | `-Werror`, `-w` | Warnings as errors / no warnings |
+| `--error-limit <n>` | Stop after `n` errors, `0` for no limit (default 20) |
 | `--quiet`, `--verbose` | Output verbosity |
 | `-h, --help`, `-v, --version` | Help and version |
 

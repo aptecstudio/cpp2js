@@ -48,15 +48,40 @@ function readFileUtf8(file) {
 function compile(options) {
   var diagnostics = new DiagnosticBag({
     warningsAsErrors: options.warningsAsErrors,
-    ignoreWarnings: options.ignoreWarnings
+    ignoreWarnings: options.ignoreWarnings,
+    errorLimit: typeof options.errorLimit === 'number' ? options.errorLimit : 0
   });
   var readFile = options.readFile || readFileUtf8;
   var sources = [];
   var units = [];
+
+  try {
+    compileUnits(options, diagnostics, readFile, sources, units);
+  } catch (err) {
+    // The error limit stops the compilation; the fatal error is recorded.
+    if (!(err instanceof DiagnosticBag.ErrorLimitReached)) {
+      throw err;
+    }
+  }
+
+  if (!diagnostics.hasErrors()) {
+    diagnostics.error('compilation is not implemented yet');
+  }
+
+  return {
+    success: !diagnostics.hasErrors(),
+    diagnostics: diagnostics,
+    sources: sources,
+    units: units,
+    files: []
+  };
+}
+
+/** Reads, preprocesses, lexes and parses every input. */
+function compileUnits(options, diagnostics, readFile, sources, units) {
   var result;
   var tokens;
   var i;
-
   for (i = 0; i < options.inputs.length; i++) {
     try {
       sources.push(new SourceFile(options.inputs[i], readFile(options.inputs[i])));
@@ -87,18 +112,6 @@ function compile(options) {
       }).parseTranslationUnit()
     });
   }
-
-  if (!diagnostics.hasErrors()) {
-    diagnostics.error('compilation is not implemented yet');
-  }
-
-  return {
-    success: !diagnostics.hasErrors(),
-    diagnostics: diagnostics,
-    sources: sources,
-    units: units,
-    files: []
-  };
 }
 
 module.exports = {
