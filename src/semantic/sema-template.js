@@ -12,6 +12,7 @@
  * translation unit.
  */
 
+var ast = require('../ast/nodes');
 var T = require('./types');
 var I = require('../util/int64');
 var scopes = require('./scope');
@@ -103,6 +104,25 @@ function mergeDefaults(oldParams, newParams) {
 }
 
 /** Canonical key of a template argument list (types by id, values exactly). */
+/** Whether an expression mentions a dependent value (signature patterns). */
+function containsDependentValue(node) {
+  var def;
+  if (!node || typeof node !== 'object') {
+    return false;
+  }
+  if (Array.isArray(node)) {
+    return node.some(containsDependentValue);
+  }
+  if (node.kind === 'DependentExpr' || (node.kind === 'DeclRefExpr' && node.decl &&
+      node.decl.dependentIndex !== undefined)) {
+    return true;
+  }
+  def = ast.NODE_KINDS[node.kind];
+  return !!def && def.children.some(function (child) {
+    return containsDependentValue(node[child]);
+  });
+}
+
 function argumentKey(args) {
   return args.map(function (a) {
     if (a.kind === 'type') {
@@ -110,6 +130,9 @@ function argumentKey(args) {
     }
     if (a.kind === 'pack') {
       return 'p(' + argumentKey(a.elements) + ')';
+    }
+    if (a.value === null && a.nonDeduced) {
+      return 'e(' + a.spelling + ')';
     }
     if (a.value === null) {
       return 'd' + a.dependentIndex;
@@ -189,6 +212,12 @@ Sema.prototype.nonTypeArgument = function (param, expr, range) {
   if (expr.kind === 'DeclRefExpr' && expr.decl.dependentIndex !== undefined) {
     return { kind: 'value', value: null, type: param.type.unqualified,
       dependentIndex: expr.decl.dependentIndex, range: range };
+  }
+  if (containsDependentValue(expr)) {
+    // A value computed from template parameters: not deducible (14.8.2.5/5).
+    return { kind: 'value', value: null, type: param.type.unqualified, nonDeduced: true,
+      spelling: range && range.source ? range.source.text.slice(range.start, range.end)
+        .replace(/\s+/g, '') : '?', range: range };
   }
   if (T.isFloating(expr.type)) {
     this.error('conversion from ' + this.quote(expr.type) + ' to ' + this.quote(param.type) +
@@ -693,7 +722,7 @@ Sema.prototype.dependentSpecialization = function (tmpl, args) {
     record.templateArgs = args;
     record.qualifiedName = tmpl.name + this.argumentsToString(args.map(function (a) {
       return a.value === null && a.kind === 'value' ? { kind: 'type',
-        type: { kind: 'builtin', name: 'N' } } : a;
+        type: { kind: 'builtin', name: a.nonDeduced ? a.spelling : 'N' } } : a;
     }));
     tmpl.instantiations[key] = record;
   }
@@ -861,7 +890,10 @@ Sema.prototype.matchArgumentLists = function (patterns, args, deduced) {
         return false;
       }
     } else if (p.kind === 'value') {
-      if (p.value === null) {
+      if (p.value === null && p.nonDeduced) {
+        // Checked when the deduced arguments are substituted.
+        continue;
+      } else if (p.value === null) {
         if (deduced[p.dependentIndex] && !I.eq(deduced[p.dependentIndex].value, a.value)) {
           return false;
         }

@@ -307,3 +307,22 @@ test('defines member templates out of line', function () {
     'template <class T> struct P<T *> { void f(); };\ntemplate <class T> void P<T *>::f() {}'),
     ['out-of-line members of partial specializations are not supported yet']);
 });
+
+test('handles dependent names and values in signatures', function () {
+  var r = ok('template <bool B, class T = void> struct enable_if {};\n' +
+    'template <class T> struct enable_if<true, T> { typedef T type; };\n' +
+    'template <class T> struct is_int { static const bool value = false; };\n' +
+    'template <> struct is_int<int> { static const bool value = true; };\n' +
+    'template <class T> typename enable_if<is_int<T>::value, int>::type pick(T) { return 1; }\n' +
+    'template <class T> typename enable_if<!is_int<T>::value, int>::type pick(T) { return 2; }\n' +
+    'template <class T> struct rm { typedef T type; };\n' +
+    'template <class T> struct rm<T &> { typedef T type; };\n' +
+    'template <class T> T &&fwd(typename rm<T>::type &t) { return static_cast<T &&>(t); }\n' +
+    'struct S { S(); S(const S &); };\n' +
+    'template <class T, class... A> T make(A &&... a) { return T(fwd<A>(a)...); }\n' +
+    'int a = pick(1) + pick(2.0);\nvoid g() { S s; S u = make<S>(s); int i = make<int>(3); }');
+  assert.deepEqual(lines(r, /^FunctionDecl (pick|make|fwd) /), [
+    'FunctionDecl pick \'int (int)\'', 'FunctionDecl pick \'int (double)\'',
+    'FunctionDecl make \'S (S &)\'', 'FunctionDecl make \'int (int &&)\'',
+    'FunctionDecl fwd \'S &(S &)\'', 'FunctionDecl fwd \'int &&(int &)\'']);
+});

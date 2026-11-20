@@ -19,15 +19,15 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 11 / 13  |
+| 5   | Parser and AST                          | In progress  | 12 / 13  |
 | 6   | Semantic analysis                       | In progress  | 11 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
-| 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
+| 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 15   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 69 / 124 items done.**
+**Overall: 70 / 125 items done.**
 
 ---
 
@@ -117,9 +117,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Enumerations (including `enum class`) (D-049).
 - [x] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas, `decltype`,
   `static_assert` (D-055, D-056, D-057).
-- [~] Templates (D-059 to D-065): class and function templates, specializations,
-  variadic, alias and member templates, out-of-line members done; dependent names
-  (`typename T::x`) to check.
+- [x] Templates (D-059 to D-066): class and function templates, specializations,
+  variadic, alias and member templates, out-of-line members, dependent names and values.
 - [ ] Syntax error recovery and diagnostics.
 - [x] `__js__` statements/expressions in the AST (D-026, D-058).
 - [x] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
@@ -187,6 +186,9 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [ ] Per-build generator of obfuscated member names (D-012).
 - [ ] Platform layer: browser, Node.js, mixed contexts such as Electron (D-013).
 - [ ] Standard library headers in JavaScript, most used first (D-017).
+- [ ] Template features left for the standard library (D-066): template template
+  parameters, non-type parameters of pointer type, conversion function templates,
+  explicit specializations of members, out-of-line members of partial specializations.
 - [ ] Usage analysis and dead-code elimination of the standard library.
 - [ ] Separate standard library bundle output.
 - [ ] Flag to embed the standard library bundle in the main output.
@@ -268,3 +270,5 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Templates T5a: alias templates (D-063).
 - **2026-11-20** — Templates T5b: member templates (D-064).
 - **2026-11-20** — Templates T5c: out-of-line members of templates (D-065).
+- **2026-11-20** — Templates T5d: dependent names and values (D-066); templates item done,
+  remaining template features moved to Phase 10.

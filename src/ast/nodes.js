@@ -116,7 +116,9 @@ var NODE_KINDS = {
     'returnType', 'closure', 'type', 'valueCategory'] },
   LambdaCapture: { children: ['init'], props: ['variable', 'byReference', 'isThis'] },
   DefaultArgExpr: { children: [], props: ['param', 'type', 'valueCategory'] },
-  JsExpr: { children: ['inputs'], props: ['code', 'type', 'valueCategory'] }
+  JsExpr: { children: ['inputs'], props: ['code', 'type', 'valueCategory'] },
+  // A value that depends on template parameters, in a signature pattern.
+  DependentExpr: { children: [], props: ['name', 'type', 'valueCategory'] }
 };
 
 /**

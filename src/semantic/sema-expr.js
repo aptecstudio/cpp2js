@@ -336,7 +336,13 @@ Sema.prototype.evaluateConstantInt64 = function (expr) {
 // Names.
 
 Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
-  var result = qualifier ? scopes.lookupQualified(qualifier, name) :
+  var result;
+  if (qualifier && qualifier.isDependent) {
+    // `X<T>::value` in a signature pattern: known only at instantiation.
+    return this._expr('DependentExpr', range, { name: (qualifier.qualifiedName ||
+      qualifier.name) + '::' + name }, this.types.builtin('int'), 'prvalue');
+  }
+  result = qualifier ? scopes.lookupQualified(qualifier, name) :
     scopes.lookupUnqualified(this.scope, name);
   var decl;
   var node;

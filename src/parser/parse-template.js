@@ -1315,7 +1315,7 @@ Parser.prototype._outOfLineClassTemplate = function (params) {
       continue;
     }
     close = this._matchingAngle(i + 1);
-    if (close < 0 || !this.isPunct('::', close + 1)) {
+    if (close < 0 || !this.isPunct('::', close + 1) || !this._declaratorNameAt(close + 2)) {
       continue;
     }
     mentions = false;
@@ -1344,6 +1344,23 @@ Parser.prototype._outOfLineClassTemplate = function (params) {
     }
     return { template: info.decls[0] };
   }
+};
+
+/**
+ * Whether the tokens at offset `i` are a member's declarator-id followed
+ * by what can follow one: `f(`, `n =`, `n;`, `a[`, `~X(`, `operator`.
+ */
+Parser.prototype._declaratorNameAt = function (i) {
+  var next;
+  if (this.isPunct('~', i) || this.isKeyword('operator', i)) {
+    return true;
+  }
+  if (this.peek(i).kind !== TokenKind.IDENTIFIER) {
+    return false;
+  }
+  next = this.peek(i + 1);
+  return next.kind === TokenKind.PUNCT && (next.value === '(' || next.value === '=' ||
+    next.value === ';' || next.value === '[' || next.value === '{');
 };
 
 /**

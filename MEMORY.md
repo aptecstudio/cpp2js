@@ -1285,6 +1285,28 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Discarded**: recording member bodies at class level by scanning
   ahead (out-of-line definitions can follow uses).
 
+### D-066 — Dependent values in signature patterns; template scope
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T5).
+- **Decision**:
+  - in a signature pattern, `X<T>::name` with a dependent qualifier is a
+    `DependentExpr`; a non-type template argument computed from template
+    parameters (`is_int<T>::value`, `N + 1`) is a non-deduced dependent
+    value, identified by its spelling, so `enable_if<C<T>::value>` and
+    `enable_if<!C<T>::value>` give different signatures; the real value
+    is checked when the deduced arguments are substituted (SFINAE);
+  - out-of-line members are recognized only when `X<params>::` is
+    directly followed by a declarator-id (`f(`, `n =`, `n;`, `~X`,
+    `operator`), so `typename X<T>::type f(...)` and `X<T>::value`
+    inside template arguments are not taken for them;
+  - the templates item of Phase 5 is complete; template template
+    parameters, non-type parameters of pointer type, conversion function
+    templates, explicit specializations of members and out-of-line
+    members of partial specializations are deferred to Phase 10, when the
+    standard library needs them.
+- **Reason**: covers the standard type-trait / SFINAE idioms; the
+  deferred features are rare in user code.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
