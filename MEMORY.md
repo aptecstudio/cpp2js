@@ -1321,6 +1321,23 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   inheritance here`.
 - **Reason**: completes C++11 clause 11 with Clang's diagnostics.
 
+### D-068 — C-linkage checks
+
+- **Status**: Accepted (agent, 2026-11-20; implements D-014 in Sema).
+- **Decision**: within a translation unit, every C-linkage function or
+  variable with a given name, in any namespace, is the same entity
+  (C++11 7.5/6): declarations with different types are errors (Clang's
+  `conflicting types for` / `redeclaration of 'v' with a different type`),
+  a function and a variable cannot share the name, and matching
+  declarations in other namespaces point to the first one
+  (`cLinkageEntity`, exported once). Names that are JavaScript reserved
+  words and not C++ keywords (`in`, `function`, `var`, `let`, `typeof`,
+  `yield`, ...) or unreplaceable globals (`arguments`, `eval`,
+  `undefined`, `NaN`, `Infinity`) are rejected, since the name is the
+  export name. Checks across translation units belong to the bundler's
+  symbol linking (Phase 9).
+- **Reason**: D-014 requires stable unmangled exports.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

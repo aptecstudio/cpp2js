@@ -20,14 +20,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
 | 5   | Parser and AST                          | In progress  | 12 / 13  |
-| 6   | Semantic analysis                       | In progress  | 12 / 14  |
+| 6   | Semantic analysis                       | In progress  | 13 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 15   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 71 / 125 items done.**
+**Overall: 72 / 125 items done.**
 
 ---
 
@@ -137,7 +137,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] `friend` functions and classes (D-054).
 - [x] Virtual functions and overriding (D-052).
 - [x] `auto` type deduction and lambda captures (D-055, D-057).
-- [ ] `extern "C"` linkage: no overloading, duplicate-name checks (D-014).
+- [x] `extern "C"` linkage: no overloading, one entity per name across namespaces, names
+  exportable to JavaScript (D-014, D-068); checks across translation units in Phase 9.
 - [ ] Semantic diagnostics.
 - [x] `__js__`: checks of operands (lvalue outputs, types of `__js__<T>`) (D-026, D-058).
 - [x] `extern "JS"`: declarations only; module imports rejected on browser (D-031, D-043).
@@ -173,7 +174,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 ## Phase 9 — Bundler
 
 - [ ] Combine multiple translation units into one output file.
-- [ ] Link symbols across translation units (one definition rule checks).
+- [ ] Link symbols across translation units (one definition rule checks, C-linkage names
+  declared with different types in different units, D-068).
 - [ ] Module wrapper of the bundle (IIFE).
 - [ ] Entry point: call `main()` and propagate its return code (D-011).
 - [ ] Export `extern "C"` symbols: `exports` on Node.js, global object in the browser (D-014).
@@ -273,3 +275,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — Templates T5d: dependent names and values (D-066); templates item done,
   remaining template features moved to Phase 10.
 - **2026-11-20** — Access control completed (D-067).
+- **2026-11-20** — `extern "C"` checks within a translation unit (D-068).

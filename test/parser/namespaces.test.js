@@ -143,3 +143,16 @@ test('accepts standard attributes and warns about unknown ones', function () {
   assert.deepEqual(r.warnings, ['unknown attribute \'gnu::unused\' ignored',
     'unknown attribute \'foo\' ignored']);
 });
+
+test('treats C-linkage names in every namespace as one entity', function () {
+  ok('namespace n { extern "C" int g(); }\nextern "C" int g();\nextern "C" int g() { return 1; }');
+  assert.deepEqual(errorsOf('extern "C" { int h(); namespace m { double h(); } }'),
+    ['conflicting types for \'h\'']);
+  assert.deepEqual(errorsOf('extern "C" double v;\nnamespace q { extern "C" int v; }'),
+    ['redeclaration of \'v\' with a different type: \'int\' vs \'double\'']);
+  assert.deepEqual(errorsOf('namespace z { extern "C" int k(); }\nextern "C" int k;'),
+    ['redefinition of \'k\' as different kind of symbol']);
+  assert.deepEqual(errorsOf('extern "C" int in();\nextern "C" int arguments;'),
+    ['C-linkage name \'in\' cannot be exported: it is reserved in JavaScript',
+      'C-linkage name \'arguments\' cannot be exported: it is reserved in JavaScript']);
+});

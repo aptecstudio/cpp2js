@@ -931,6 +931,11 @@ Sema.prototype.actOnFinishQualifiedDeclaration = function (saved) {
  * @param {boolean} isDefinition Function with a body, or variable defined.
  */
 Sema.prototype.checkLinkage = function (decl, linkage, isDefinition) {
+  if (decl && decl.linkage === 'C' && (decl.kind === 'FunctionDecl' ||
+      decl.kind === 'VarDecl') && !decl.parent || (decl && decl.linkage === 'C' &&
+      decl.parent && decl.parent.kind === 'NamespaceDecl')) {
+    this._checkCLinkage(decl);
+  }
   if (linkage !== 'JS' || !decl) {
     return;
   }
@@ -941,6 +946,60 @@ Sema.prototype.checkLinkage = function (decl, linkage, isDefinition) {
     this.error('variable \'' + decl.name + '\' with \'JS\' linkage cannot be initialized: it ' +
       'is provided by JavaScript', decl.range);
   }
+};
+
+/**
+ * JavaScript words that C-linkage names cannot take, as they are exported
+ * under their own name (D-014): reserved words that are not C++ keywords,
+ * and globals that cannot be replaced.
+ */
+var JS_RESERVED_EXPORTS = ['arguments', 'await', 'debugger', 'eval', 'finally', 'function',
+  'implements', 'in', 'instanceof', 'interface', 'let', 'null', 'package', 'super', 'typeof',
+  'undefined', 'var', 'with', 'yield', 'NaN', 'Infinity'];
+
+/**
+ * C-linkage functions and variables (C++11 7.5/6, D-014): every
+ * declaration of a name in any namespace denotes the same entity, so the
+ * types must agree; the name must be usable as a JavaScript export.
+ */
+Sema.prototype._checkCLinkage = function (decl) {
+  var names = this._cLinkageNames = this._cLinkageNames || Object.create(null);
+  var first = names[decl.name];
+  var root = decl;
+  var diag;
+  var same;
+  while (root.previous) {
+    root = root.previous;
+  }
+  if (JS_RESERVED_EXPORTS.indexOf(decl.name) !== -1 && !decl.previous) {
+    this.error('C-linkage name \'' + decl.name + '\' cannot be exported: it is reserved in ' +
+      'JavaScript', decl.range);
+  }
+  if (!first) {
+    names[decl.name] = root;
+    return;
+  }
+  if (first === root || (first.parent || null) === (decl.parent || null)) {
+    // Redeclarations in the same namespace were checked when declared.
+    return;
+  }
+  if (first.kind !== decl.kind) {
+    diag = this.error('redefinition of \'' + decl.name + '\' as different kind of symbol',
+      decl.range);
+    this.note(diag, 'previous definition is here', first.range);
+    return;
+  }
+  same = decl.kind === 'FunctionDecl' ? sameSignature(first.type, decl.type) &&
+    first.type.returnType === decl.type.returnType : first.type === decl.type;
+  if (!same) {
+    diag = this.error(decl.kind === 'FunctionDecl' ? 'conflicting types for \'' + decl.name +
+      '\'' : 'redeclaration of \'' + decl.name + '\' with a different type: ' +
+      this.quote(decl.type) + ' vs ' + this.quote(first.type), decl.range);
+    this.note(diag, 'previous declaration is here', first.range);
+    return;
+  }
+  // The same entity declared in another namespace (exported once).
+  decl.cLinkageEntity = first;
 };
 
 /** Records a top-level declaration in the translation unit. */
