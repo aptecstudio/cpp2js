@@ -1152,3 +1152,4 @@ require('./sema-cxx11');
 require('./sema-lambda');
 require('./sema-js');
 require('./sema-template');
+require('./sema-warn');

@@ -20,14 +20,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
 | 5   | Parser and AST                          | Done         | 13 / 13  |
-| 6   | Semantic analysis                       | In progress  | 13 / 14  |
+| 6   | Semantic analysis                       | Done         | 14 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 15   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 73 / 125 items done.**
+**Overall: 74 / 125 items done.**
 
 ---
 
@@ -140,7 +140,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] `auto` type deduction and lambda captures (D-055, D-057).
 - [x] `extern "C"` linkage: no overloading, one entity per name across namespaces, names
   exportable to JavaScript (D-014, D-068); checks across translation units in Phase 9.
-- [ ] Semantic diagnostics.
+- [x] Semantic diagnostics: Clang's default warnings (D-071).
 - [x] `__js__`: checks of operands (lvalue outputs, types of `__js__<T>`) (D-026, D-058).
 - [x] `extern "JS"`: declarations only; module imports rejected on browser (D-031, D-043).
 
@@ -279,3 +279,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-20** — `extern "C"` checks within a translation unit (D-068).
 - **2026-11-20** — Syntax error recovery (D-069); Phase 5 done.
 - **2026-11-20** — `--error-limit` (D-070).
+- **2026-11-20** — Clang's default warnings (D-071); Phase 6 done.

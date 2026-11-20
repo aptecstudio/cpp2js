@@ -43,6 +43,7 @@ Sema.prototype.actOnFinishFunctionBody = function (decl, body) {
   if (state && body) {
     this._resolveGotos(state);
     this._checkFallOffEnd(decl, body);
+    this._warnUninitialized(body);
   }
   originalFinish.call(this, decl, body);
 };
@@ -210,6 +211,8 @@ Sema.prototype.actOnSwitchCondition = function (expr, range) {
       ' invalid)', range || expr.range);
     return null;
   }
+  // Kept for -Wswitch, checked when the switch ends.
+  this._lastSwitchEnum = T.isEnum(operand.type) ? operand.type : null;
   return T.isScopedEnum(operand.type) ? operand : this._promoted(operand);
 };
 
@@ -229,6 +232,7 @@ Sema.prototype.setSwitchConditionType = function (type) {
   var sw = this._currentSwitch();
   if (sw) {
     sw.conditionType = type;
+    sw.enumType = type ? this._lastSwitchEnum : null;
   }
 };
 
@@ -299,6 +303,7 @@ Sema.prototype.actOnDefault = function (range) {
 Sema.prototype.finishSwitch = function (node) {
   var sw = this.popBreakable();
   node.cases = sw.cases.concat(sw.hasDefault ? [sw.hasDefault] : []);
+  this._warnSwitchEnum(sw, node);
 };
 
 // ---------------------------------------------------------------------------

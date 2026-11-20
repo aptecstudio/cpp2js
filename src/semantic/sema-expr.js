@@ -502,6 +502,11 @@ Sema.prototype._addressOf = function (operand, range) {
       range);
     return null;
   }
+  if (operand.kind === 'SubscriptExpr' && operand.onePastEnd) {
+    // `&a[N]` points one past the end, which is valid.
+    this.diagnostics.retract(operand.onePastEnd);
+    operand.onePastEnd = null;
+  }
   return this._unary('&', operand, this.types.pointer(operand.type), 'prvalue', range);
 };
 
@@ -589,8 +594,10 @@ var COMPOUND_OPS = { '*=': '*', '/=': '/', '%=': '%', '+=': '+', '-=': '-', '<<=
   '>>=': '>>', '&=': '&', '^=': '^', '|=': '|' };
 
 Sema.prototype._binary = function (op, left, right, type, category, range) {
-  return this._expr('BinaryExpr', range, { operator: op, left: left, right: right }, type,
+  var node = this._expr('BinaryExpr', range, { operator: op, left: left, right: right }, type,
     category);
+  this._warnBinary(node);
+  return node;
 };
 
 Sema.prototype._invalidOperands = function (left, right, range) {
@@ -936,6 +943,7 @@ Sema.prototype.actOnSubscript = function (base, index, range) {
   var b;
   var i;
   var tmp;
+  var node;
   var overloaded;
   if (!base || !index) {
     return null;
@@ -968,8 +976,14 @@ Sema.prototype.actOnSubscript = function (base, index, range) {
       range);
     return null;
   }
-  return this._expr('SubscriptExpr', range, { base: b, index: this._promoted(i) },
+  node = this._expr('SubscriptExpr', range, { base: b, index: this._promoted(i) },
     b.type.pointee, 'lvalue');
+  if (b === tmp) {
+    this._warnArrayBounds(index, base, node);
+  } else {
+    this._warnArrayBounds(base, index, node);
+  }
+  return node;
 };
 
 /** Type of a call expression: references removed, prvalues unqualified. */
@@ -1784,6 +1798,9 @@ Sema.prototype.actOnReturnStatement = function (value, range, hadValue) {
     return this.lambdaReturn(fn.lambda, value, range);
   }
   returnType = fn.type.returnType;
+  if (value) {
+    this._warnReturnStackAddress(fn, value);
+  }
   if (T.isVoid(returnType)) {
     if (value && !T.isVoid(value.type)) {
       this.error('void function \'' + fn.name + '\' should not return a value', range);
@@ -1823,6 +1840,9 @@ Sema.prototype.actOnExpressionStatement = function (expr, range) {
   var unused;
   while (core && (core.kind === 'ParenExpr' || (core.kind === 'CastExpr' && !core.written))) {
     core = core.kind === 'ParenExpr' ? core.expr : core.operand;
+  }
+  if (core && this._warnUnusedComparison(core)) {
+    core = null;
   }
   if (core) {
     unused = /Literal$/.test(core.kind) || core.kind === 'DeclRefExpr' ||

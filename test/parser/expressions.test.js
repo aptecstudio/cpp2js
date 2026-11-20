@@ -272,7 +272,8 @@ test('evaluates integral constant expressions', function () {
 
 test('warns about suspicious code', function () {
   assert.deepEqual(warningsOf('int x;', 'x + 1; x == 2; x; (void)x; x = 1; x++;'),
-    ['expression result unused', 'expression result unused', 'expression result unused']);
+    ['expression result unused', 'equality comparison result unused',
+      'expression result unused']);
   assert.deepEqual(warningsOf('int x;', 'x = x / 0;'), ['division by zero is undefined']);
   assert.deepEqual(warningsOf('', 'int i = 2.5; char c = 300;'), [
     'implicit conversion from \'double\' to \'int\' changes value from 2.5 to 2',

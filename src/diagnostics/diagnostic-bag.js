@@ -107,6 +107,26 @@ DiagnosticBag.prototype.warning = function (message, span) {
 };
 
 /**
+ * Withdraws a recorded diagnostic (a warning found to be unjustified by
+ * what follows, such as `&a[N]`).
+ *
+ * @param {Diagnostic} diag
+ * @returns {void}
+ */
+DiagnosticBag.prototype.retract = function (diag) {
+  var i = this._items.indexOf(diag);
+  if (i === -1) {
+    return;
+  }
+  this._items.splice(i, 1);
+  if (diag.severity === Severity.ERROR) {
+    this.errorCount--;
+  } else {
+    this.warningCount--;
+  }
+};
+
+/**
  * Returns whether at least one error was recorded.
  *
  * @returns {boolean}

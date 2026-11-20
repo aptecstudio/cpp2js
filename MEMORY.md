@@ -1374,6 +1374,28 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   tentative parses (SFINAE, patterns) have no limit.
 - **Discarded**: no limit (owner choice).
 
+### D-071 — Default warnings
+
+- **Status**: Accepted (owner chose the set, 2026-11-20, poll: Clang's
+  default-on warnings).
+- **Decision**: `src/semantic/sema-warn.js` adds, with Clang's messages:
+  shift count negative or `>=` width; signed overflow of constant
+  `+ - *` (`overflow in expression; result is X with type 'int'`);
+  constant array index before the beginning or past the end (with the
+  `array 'a' declared here` note; `&a[N]` withdraws the warning through
+  `DiagnosticBag.retract`); address of / reference to a local variable or
+  parameter returned (also a local array decaying); unused equality and
+  relational comparisons (with the `use '='` note); enumeration values
+  without a case in a switch without `default` (Clang's 1/2/3/many
+  wordings); `"str" + n` unless `n` is a constant within the string;
+  `variable 'x' is uninitialized when used here` for a scalar local
+  without initializer read before any other use of it in the body, not
+  inside a loop it outlives and not after a label.
+- **Reason**: matches what Clang reports without flags; the analyses
+  are syntactic and never warn where Clang would not.
+- **Not done**: `-Wsometimes-uninitialized` (needs flow analysis),
+  `-Wall`-only warnings (unused variables, sign compare...).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
