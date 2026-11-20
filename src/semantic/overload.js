@@ -236,6 +236,7 @@ Sema.prototype._callSingle = function (decl, args, range) {
   if (!this.checkNotDeleted(decl, range)) {
     return null;
   }
+  this.requireDefinition(decl);
   converted = this._convertArguments(decl.type, decl, args, range);
   return converted ? { decl: decl, args: converted } : null;
 };
@@ -243,6 +244,7 @@ Sema.prototype._callSingle = function (decl, args, range) {
 /** Converts the arguments for the chosen candidate. */
 Sema.prototype._applyCandidate = function (candidate, args, range) {
   var out = [];
+  this.requireDefinition(candidate.decl);
   var params = candidate.decl.type.params;
   var i;
   for (i = 0; i < args.length; i++) {

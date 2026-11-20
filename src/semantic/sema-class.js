@@ -31,7 +31,14 @@ var ScopeKind = scopes.ScopeKind;
  * @returns {?Object} The RecordDecl.
  */
 Sema.prototype.actOnClassHead = function (tag, name, form, range) {
-  var previous = name ? this._lookupTag(name, form !== 'reference') : null;
+  var target = this._classInstantiationTarget;
+  var previous;
+  if (target && form === 'definition' && name === target.template.name) {
+    // The head of a class template being instantiated (D-059).
+    this._classInstantiationTarget = null;
+    return this.startClassInstantiation(target, tag, range);
+  }
+  previous = name ? this._lookupTag(name, form !== 'reference') : null;
   var diag;
   var scope;
   if (previous && previous.kind !== 'RecordDecl') {

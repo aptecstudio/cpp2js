@@ -263,6 +263,8 @@ Parser.prototype.parseTranslationUnit = function () {
   for (i = 0; i < decls.length; i++) {
     this.sema.addTopLevel(decls[i]);
   }
+  // Function templates and members of class templates used in the unit.
+  this.processPendingInstantiations();
   return this.sema.translationUnit;
 };
 
@@ -317,6 +319,9 @@ Parser.prototype.parseDeclaration = function () {
   }
   if (this.isKeyword('static_assert')) {
     return [this.parseStaticAssert()];
+  }
+  if (this.isKeyword('template')) {
+    return this.parseTemplateDeclaration();
   }
   if (this.isKeyword('using')) {
     if (this.isKeyword('namespace', 1)) {
@@ -604,6 +609,8 @@ Parser.prototype._scanQualifiedName = function (offset) {
   var tok;
   var info;
   var decl;
+  var templateId;
+  var splitGreater = false;
   if (this.isPunct('::', i)) {
     global = true;
     qualifier = this.sema.globalNamespace;
@@ -616,9 +623,25 @@ Parser.prototype._scanQualifiedName = function (offset) {
     }
     info = qualifier ? this.sema.classifyQualifiedName(qualifier, tok.value) :
       this.sema.classifyName(tok.value);
-    if (!this.isPunct('::', i + 1)) {
+    if (info.kind === 'type' && info.template && this.isPunct('<', i + 1)) {
+      info = { kind: 'template', decls: [info.template] };
+    }
+    if (info.kind === 'template' && this.isPunct('<', i + 1) &&
+        info.decls[0].templateKind !== 'function') {
+      // `X<args>`: parsed (and instantiated) once, cached by position.
+      templateId = this.parseTemplateIdAt(this._pos + i, info.decls[0]);
+      splitGreater = templateId.splitGreater;
+      if (!templateId.type) {
+        return { qualifier: qualifier, global: global, name: tok.value, nameOffset: i,
+          info: { kind: 'error', decls: [] }, length: templateId.end - this._pos - offset,
+          error: null };
+      }
+      info = { kind: 'type', decls: [], type: templateId.type };
+      i = templateId.end - this._pos - 1;
+    }
+    if (!this.isPunct('::', i + 1) || splitGreater) {
       return { qualifier: qualifier, global: global, name: tok.value, nameOffset: i,
-        info: info, length: i - offset + 1, error: null };
+        info: info, length: i - offset + 1, error: null, splitGreater: splitGreater };
     }
     decl = info.decls[0];
     if (info.kind === 'namespace') {
@@ -897,7 +920,28 @@ Parser.prototype.parseDeclSpecifiers = function () {
       scan = this._scanQualifiedName(0);
       if (scan && !scan.error && scan.info.kind === 'type') {
         this._skip(scan.length);
+        if (scan.splitGreater) {
+          // The template-id ended with `>>`: one `>` is still pending.
+          this._splitGreater = true;
+        }
         spec.namedType = scan.info.type;
+        hasType = true;
+        continue;
+      }
+      if (scan && scan.info.kind === 'error') {
+        // An invalid template-id, already reported.
+        this._skip(scan.length);
+        spec.namedType = this.sema.types.builtin('int');
+        hasType = true;
+        continue;
+      }
+      if (scan && !scan.error && scan.info.kind === 'template' &&
+          scan.info.decls[0].templateKind === 'class' && this._looksLikeDeclaratorStart(
+            scan.length)) {
+        this._skip(scan.nameOffset);
+        this.diagnostics.error('use of class template \'' + scan.name + '\' requires template ' +
+          'arguments', this.rangeOf(this.next()));
+        spec.namedType = this.sema.types.builtin('int');
         hasType = true;
         continue;
       }
@@ -1120,7 +1164,11 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&
       tok.value === '::')) {
     scan = this._scanQualifiedName(offset);
-    return !!scan && !scan.error && scan.info.kind === 'type';
+    // An invalid template-id or a class template without arguments still
+    // starts a declaration (the error is reported there).
+    return !!scan && !scan.error && (scan.info.kind === 'type' || scan.info.kind === 'error' ||
+      (scan.info.kind === 'template' && scan.info.decls[0].templateKind === 'class' &&
+        this._looksLikeDeclaratorStart(offset + scan.length)));
   }
   return false;
 };
@@ -1137,6 +1185,11 @@ Parser.prototype.parseDeclarator = function (abstract) {
   var first = this.peek();
   var declarator = { ptrOps: [], name: null, nameToken: null, qualifier: null, nested: null,
     suffixes: [], range: null };
+  if (abstract && this._splitGreater) {
+    // A pending `>` of a `>>` closes the enclosing template argument.
+    declarator.range = this.rangeOf(first);
+    return declarator;
+  }
   var tok;
   var op;
   var qualified;
@@ -1589,3 +1642,4 @@ module.exports = {
 require('./parse-expr');
 require('./parse-stmt');
 require('./parse-class');
+require('./parse-template');

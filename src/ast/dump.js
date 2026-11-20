@@ -148,7 +148,7 @@ function describe(node) {
         I.toString(node.value, !T.isUnsigned(node.parent.underlyingType)) : '?');
       break;
     case 'RecordDecl':
-      parts.push(node.tag, node.name || '<anonymous>');
+      parts.push(node.tag, node.templateOf ? node.qualifiedName : node.name || '<anonymous>');
       if (node.complete) {
         parts.push('size=' + node.size, 'align=' + node.align);
         if (node.isPolymorphic) {
@@ -190,6 +190,12 @@ function describe(node) {
       parts.push(JSON.stringify((node.code || []).map(function (p) {
         return typeof p === 'number' ? '%' + p : p;
       }).join('')));
+      break;
+    case 'TemplateDecl':
+      parts.push(node.templateKind, node.name, '<' + node.params.map(function (p) {
+        return (p.kind === 'type' ? 'typename' : T.typeToString(p.type)) +
+          (p.isPack ? '...' : '') + (p.name ? ' ' + p.name : '');
+      }).join(', ') + '>');
       break;
     case 'BaseSpecifier':
       parts.push(node.access, T.typeToString(node.type));
@@ -249,13 +255,22 @@ function describe(node) {
 function dump(root) {
   var lines = [];
   var depth = 0;
-  nodes.walk(root, function (node) {
+  function enter(node) {
     var pad = new Array(depth + 1).join('  ');
     lines.push(pad + describe(node));
     depth++;
-  }, function () {
+  }
+  function leave() {
     depth--;
-  });
+  }
+  nodes.walk(root, enter, leave);
+  // Template instantiations are listed after the declarations.
+  if (root.kind === 'TranslationUnit' && root.instantiations && root.instantiations.length) {
+    depth = 1;
+    root.instantiations.forEach(function (decl) {
+      nodes.walk(decl, enter, leave);
+    });
+  }
   return lines.join('\n') + '\n';
 }
 

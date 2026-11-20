@@ -1097,6 +1097,42 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Reason**: GCC extended-asm familiarity (D-026) without making the
   common JavaScript `%` operator awkward.
 
+### D-059 — Templates by token replay
+
+- **Status**: Accepted (owner chose to implement templates now,
+  2026-11-20; technique by the agent).
+- **Decision**: `src/semantic/sema-template.js`, `src/parser/parse-template.js`:
+  - a template declaration is **not analysed where it is written**: its
+    parameter list is parsed, the declaration's tokens are skipped and
+    their range is stored in a `TemplateDecl`;
+  - **instantiation re-parses those tokens** with the parser moved back
+    to them and a template scope binding each parameter (types as
+    typedefs, values as constants); the instantiated code is therefore
+    fully checked with concrete types, and errors name the concrete
+    types (`Array<int, 4>`). Instantiations are cached by their
+    arguments; a class instantiation is cached before its body is
+    parsed, so it may refer to itself; inside it the template's name
+    alone is the injected-class-name, followed by `<` the template;
+  - **member function bodies of class templates are instantiated only
+    when used** (14.7.1): their positions are recorded and the body is
+    parsed at the end of the translation unit when the function is
+    called (virtual functions and destructors always);
+  - template arguments: `>` and `>>` close the list (C++11 14.2/3; a
+    `>>` leaves one `>` pending), parentheses make `>` an operator
+    again; template-ids are parsed once per position (also during
+    tentative name scanning) and cached; default arguments are replayed
+    with the earlier parameters bound; non-type arguments are converted
+    constant expressions (no narrowing, no floating point); non-type
+    parameters are integral or enumeration types for now;
+  - instantiated classes are listed in `TranslationUnit.instantiations`.
+- **Reason**: re-parsing reuses the whole parser and semantic analysis,
+  gives exact checking of instantiations and handles dependent code
+  without a separate representation of dependent types.
+- **Trade-off**: errors in a template that is never instantiated are not
+  reported (as with Microsoft's compiler before two-phase lookup);
+  names are looked up from the template's definition scope at
+  instantiation.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

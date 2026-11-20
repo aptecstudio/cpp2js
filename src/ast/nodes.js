@@ -17,7 +17,8 @@
 
 var NODE_KINDS = {
   // Declarations -----------------------------------------------------------
-  TranslationUnit: { children: ['decls'], props: ['source'] },
+  TranslationUnit: { children: ['decls'], props: ['source', 'instantiations'] },
+  TemplateDecl: { children: [], props: ['name', 'params', 'templateKind', 'parent'] },
   NamespaceDecl: { children: ['decls'], props: ['name', 'isInline', 'parent', 'scope'] },
   NamespaceAliasDecl: { children: [], props: ['name', 'target'] },
   LinkageSpecDecl: { children: ['decls'], props: ['language', 'braced'] },

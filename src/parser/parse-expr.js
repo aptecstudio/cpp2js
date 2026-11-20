@@ -104,6 +104,10 @@ Parser.prototype.parseBinaryExpression = function (level) {
     if (tok.kind !== TokenKind.PUNCT || BINARY_LEVELS[level].indexOf(tok.value) === -1) {
       return left;
     }
+    // Inside a template argument list `>` and `>>` close it (14.2/3).
+    if (this._templateArgDepth && (tok.value === '>' || tok.value === '>>')) {
+      return left;
+    }
     this.next();
     right = this.parseBinaryExpression(level + 1);
     left = this.sema.actOnBinaryOperator(tok.value, left, right, this.rangeFrom(start));
@@ -133,7 +137,7 @@ Parser.prototype.startsTypeId = function (offset) {
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT && tok.value === '::')) {
     scan = this._scanQualifiedName(offset);
-    return !!scan && !scan.error && scan.info.kind === 'type';
+    return !!scan && !scan.error && (scan.info.kind === 'type' || scan.info.kind === 'error');
   }
   return false;
 };
@@ -311,6 +315,7 @@ Parser.prototype.parsePostfixExpression = function () {
   var args;
   var index;
   var name;
+  var savedDepth;
   for (;;) {
     tok = this.peek();
     if (tok.kind !== TokenKind.PUNCT) {
@@ -325,7 +330,13 @@ Parser.prototype.parsePostfixExpression = function () {
         break;
       case '(':
         open = this.next();
-        args = this.isPunct(')') ? [] : this.parseExpressionList();
+        savedDepth = this._templateArgDepth;
+        this._templateArgDepth = 0;
+        try {
+          args = this.isPunct(')') ? [] : this.parseExpressionList();
+        } finally {
+          this._templateArgDepth = savedDepth;
+        }
         this.expectPunct(')', '', open);
         expr = this.sema.actOnCall(expr, args, this.rangeFrom(start));
         break;
@@ -456,6 +467,7 @@ Parser.prototype.parseNamedCast = function () {
 Parser.prototype.parsePrimaryExpression = function () {
   var tok = this.peek();
   var inner;
+  var savedDepth;
   switch (tok.kind) {
     case TokenKind.INTEGER:
       this.next();
@@ -510,7 +522,14 @@ Parser.prototype.parsePrimaryExpression = function () {
       }
       if (tok.value === '(') {
         this.next();
-        inner = this.parseExpression();
+        // Parentheses make `>` an operator again inside template arguments.
+        savedDepth = this._templateArgDepth;
+        this._templateArgDepth = 0;
+        try {
+          inner = this.parseExpression();
+        } finally {
+          this._templateArgDepth = savedDepth;
+        }
         this.expectPunct(')', '', tok);
         return this.sema.actOnParenExpr(inner, this.rangeFrom(tok));
       }

@@ -238,7 +238,7 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     return;
   }
   if (this.isKeyword('template')) {
-    this.fail('templates are not supported yet');
+    this.fail('member templates are not supported yet');
   }
   if (this._startsConstructor(record)) {
     this._parseConstructorMember(record);
@@ -278,8 +278,11 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     virt = isFunctionDeclarator(declarator) ? this._parseVirtSpecifiers() : {};
     decl = this.sema.actOnMemberDeclarator(spec, declarator, bitWidth, virt);
     if (decl && decl.kind === 'FunctionDecl' && this.isPunct('{') && first) {
-      // Parsed when the outermost class is complete.
-      this._delayedBodies.push({ decl: decl, pos: this._pos });
+      // Parsed when the outermost class is complete (or when used, in a
+      // class template instantiation).
+      if (!this._deferTemplateBody(decl, record.scope)) {
+        this._delayedBodies.push({ decl: decl, pos: this._pos });
+      }
       this._skipBraces();
       return;
     }
@@ -381,7 +384,7 @@ Parser.prototype._parseConstructorMember = function (record) {
     return;
   }
   if (this.isPunct(':') || this.isPunct('{')) {
-    if (decl) {
+    if (decl && !this._deferTemplateBody(decl, record.scope)) {
       this._delayedBodies.push({ decl: decl, pos: this._pos });
     }
     this._skipFunctionBody();
@@ -565,7 +568,9 @@ Parser.prototype._parseConversionMember = function (record) {
     decl.isExplicit = true;
   }
   if (decl && this.isPunct('{')) {
-    this._delayedBodies.push({ decl: decl, pos: this._pos });
+    if (!this._deferTemplateBody(decl, record.scope)) {
+      this._delayedBodies.push({ decl: decl, pos: this._pos });
+    }
     this._skipBraces();
     return;
   }
@@ -608,7 +613,9 @@ Parser.prototype._parseFriend = function (record, spec) {
   if (decl && this.isPunct('{')) {
     // Defined in the class: parsed with the other delayed bodies, in the
     // scope of the class (C++11 11.3/7).
-    this._delayedBodies.push({ decl: decl, pos: this._pos, scope: record.scope });
+    if (!this._deferTemplateBody(decl, record.scope)) {
+      this._delayedBodies.push({ decl: decl, pos: this._pos, scope: record.scope });
+    }
     this._skipBraces();
     return;
   }

@@ -62,7 +62,7 @@ function Sema(diagnostics, source, options) {
   this.globalNamespace.scope = new Scope(ScopeKind.NAMESPACE, null, this.globalNamespace);
   this.scope = this.globalNamespace.scope;
   this.translationUnit = ast.createNode('TranslationUnit', null, { decls: [],
-    source: source });
+    source: source, instantiations: [] });
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +150,11 @@ Sema.prototype._classify = function (result) {
   if (result.ambiguous) {
     return { kind: 'value', decls: result.decls, ambiguous: true };
   }
-  if (decl.kind === 'TypedefDecl') {
+  if (decl.kind === 'TypedefDecl' && decl.injectedTemplate) {
+    return { kind: 'type', decls: result.decls, type: decl.type,
+      template: decl.injectedTemplate };
+  }
+  if (decl.kind === 'TypedefDecl' && !decl.pack) {
     return { kind: 'type', decls: result.decls, type: decl.type };
   }
   if (decl.kind === 'RecordDecl') {
@@ -161,6 +165,12 @@ Sema.prototype._classify = function (result) {
   }
   if (decl.kind === 'NamespaceDecl' || decl.kind === 'NamespaceAliasDecl') {
     return { kind: 'namespace', decls: result.decls };
+  }
+  if (decl.kind === 'TemplateDecl') {
+    return { kind: 'template', decls: result.decls };
+  }
+  if (decl.kind === 'TypedefDecl' && decl.pack) {
+    return { kind: 'pack', decls: result.decls };
   }
   return { kind: 'value', decls: result.decls };
 };
@@ -1034,3 +1044,4 @@ require('./sema-friend');
 require('./sema-cxx11');
 require('./sema-lambda');
 require('./sema-js');
+require('./sema-template');
