@@ -1029,6 +1029,22 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
     with a C++17-extension warning.
 - **Reason**: C++11 7.1.6.2, 7.1.6.4 and 7, matching current compilers.
 
+### D-056 — Range-based for
+
+- **Status**: Accepted (agent, 2026-11-20; part of step 6b approved by the
+  owner).
+- **Decision**: `for (decl : range)` is expanded as C++11 6.5.4 says into
+  hidden variables of the `RangeForStmt` node: `__range` (`auto &&`
+  bound to the range), `__begin` and `__end` (`auto`), plus the
+  condition `__begin != __end` and the increment `++__begin`, all typed;
+  the loop variable is initialized with `*__begin`. begin/end are
+  `__range` and `__range + N` for arrays (`rangeKind: 'array'`), member
+  functions `begin()`/`end()` when the class has both (`'member'`), or
+  free functions found by argument-dependent lookup only (`'adl'`).
+  Braced lists as ranges need `std::initializer_list` and are rejected.
+- **Reason**: code generation gets every operation already resolved
+  (overloaded `!=`, `++`, `*` included).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

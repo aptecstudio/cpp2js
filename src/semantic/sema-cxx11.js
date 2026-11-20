@@ -223,3 +223,145 @@ Sema.prototype.actOnStaticAssert = function (condition, message, range) {
 };
 
 module.exports = {};
+
+// ---------------------------------------------------------------------------
+// Range-based for (C++11 6.5.4).
+
+/** A hidden variable of the range-for expansion (not visible by name). */
+Sema.prototype._hiddenVariable = function (name, declared, init, range) {
+  var decl = this.createDecl('VarDecl', range, { name: name, type: declared, storage: '',
+    parent: this.currentContext() });
+  var type;
+  var result;
+  decl.isImplicit = true;
+  type = this.deduceAuto(declared, init, name, range);
+  if (!type) {
+    return null;
+  }
+  decl.type = type;
+  result = this.initialize(type, init, 'copy', 'variable');
+  if (!result) {
+    return null;
+  }
+  decl.init = result.init;
+  decl.initStyle = 'copy';
+  return decl;
+};
+
+Sema.prototype._refTo = function (decl, range) {
+  return this._expr('DeclRefExpr', range, { decl: decl }, T.removeReference(decl.type),
+    'lvalue');
+};
+
+/**
+ * Builds the hidden variables, condition and increment of
+ * `for (decl : range)`, then declares and initializes the loop variable
+ * with `*__begin`.
+ *
+ * @param {Object} node RangeForStmt being built.
+ * @param {Object} spec decl-specifiers of the loop variable.
+ * @param {Object} declarator Its declarator.
+ * @param {Object} rangeExpr The range expression.
+ * @returns {boolean} false after an error (the body is still parsed).
+ */
+Sema.prototype.actOnRangeForHeader = function (node, spec, declarator, rangeExpr, range) {
+  var autoRef = this.types.rvalueReference(this.autoPlaceholder());
+  var autoValue = this.autoPlaceholder();
+  var rangeType;
+  var beginExpr;
+  var endExpr;
+  var loopVar;
+  var deref;
+  node.variable = loopVar = this.actOnDeclarator(spec, declarator);
+  if (!rangeExpr || !loopVar || loopVar.kind !== 'VarDecl') {
+    return false;
+  }
+  if (rangeExpr.kind === 'InitListExpr') {
+    this.error('iterating over a braced initializer list requires std::initializer_list, ' +
+      'which is not supported yet', rangeExpr.range);
+    return false;
+  }
+  node.rangeVar = this._hiddenVariable('__range', autoRef, rangeExpr, range);
+  if (!node.rangeVar) {
+    return false;
+  }
+  rangeType = T.removeReference(node.rangeVar.type);
+  if (T.isArray(rangeType)) {
+    if (rangeType.size === null) {
+      this.error('cannot use incomplete type ' + this.quote(rangeType) + ' as a range',
+        rangeExpr.range);
+      return false;
+    }
+    node.rangeKind = 'array';
+    beginExpr = this._refTo(node.rangeVar, range);
+    endExpr = this.actOnBinaryOperator('+', this._refTo(node.rangeVar, range),
+      this._expr('IntegerLiteral', range, { value: require('../util/int64').fromNumber(
+        rangeType.size) }, this.types.builtin('int'), 'prvalue'), range);
+  } else if (T.isRecord(rangeType) && this._hasBeginEndMembers(rangeType.decl)) {
+    node.rangeKind = 'member';
+    beginExpr = this.actOnCall(this.actOnMemberAccess(this._refTo(node.rangeVar, range),
+      'begin', false, range, range), [], range);
+    endExpr = this.actOnCall(this.actOnMemberAccess(this._refTo(node.rangeVar, range),
+      'end', false, range, range), [], range);
+  } else {
+    node.rangeKind = 'adl';
+    beginExpr = this._adlCall('begin', this._refTo(node.rangeVar, range), range);
+    endExpr = beginExpr ? this._adlCall('end', this._refTo(node.rangeVar, range), range) : null;
+    if (!beginExpr || !endExpr) {
+      this.error('invalid range expression of type ' + this.quote(rangeType) + '; no viable ' +
+        '\'' + (beginExpr ? 'end' : 'begin') + '\' function available', rangeExpr.range);
+      return false;
+    }
+  }
+  if (!beginExpr || !endExpr) {
+    return false;
+  }
+  node.beginVar = this._hiddenVariable('__begin', autoValue, beginExpr, range);
+  node.endVar = this._hiddenVariable('__end', autoValue, endExpr, range);
+  if (!node.beginVar || !node.endVar) {
+    return false;
+  }
+  node.condition = this.contextualBool(this.actOnBinaryOperator('!=',
+    this._refTo(node.beginVar, range), this._refTo(node.endVar, range), range));
+  node.increment = this.actOnUnaryOperator('++', this._refTo(node.beginVar, range), range);
+  deref = this.actOnUnaryOperator('*', this._refTo(node.beginVar, range), range);
+  if (!node.condition || !node.increment || !deref) {
+    return false;
+  }
+  this.actOnVariableInit(loopVar, deref, 'copy');
+  return true;
+};
+
+Sema.prototype._hasBeginEndMembers = function (record) {
+  return require('./scope').lookupMember(record, 'begin').decls.length > 0 &&
+    require('./scope').lookupMember(record, 'end').decls.length > 0;
+};
+
+/** `begin(range)` / `end(range)` found by argument-dependent lookup only. */
+Sema.prototype._adlCall = function (name, arg, range) {
+  var namespaces = this._associatedNamespaces([arg.type]);
+  var candidates = [];
+  var chosen;
+  var errors = this.diagnostics.errorCount;
+  namespaces.forEach(function (ns) {
+    require('./scope').lookupInNamespace(ns, name).decls.forEach(function (d) {
+      if (d.kind === 'FunctionDecl' && candidates.indexOf(d) === -1) {
+        candidates.push(d);
+      }
+    });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  chosen = this.resolveOverload(candidates, [arg], range, name);
+  if (!chosen && this.diagnostics.errorCount > errors) {
+    return null;
+  }
+  return chosen ? this._expr('CallExpr', range, {
+    callee: this.rvalue(this.selectOverload(this._expr('DeclRefExpr', range,
+      { decl: chosen.decl }, chosen.decl.type, 'lvalue'), chosen.decl)),
+    args: chosen.args,
+    'function': chosen.decl
+  }, T.removeReference(chosen.decl.type.returnType), chosen.decl.type.returnType.kind ===
+    T.TypeKind.LVALUE_REF ? 'lvalue' : 'prvalue') : null;
+};

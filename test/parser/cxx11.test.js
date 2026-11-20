@@ -74,3 +74,39 @@ test('checks static assertions', function () {
   assert.deepEqual(parse('static_assert(true);').warnings,
     ['static_assert with no message is a C++17 extension']);
 });
+
+test('expands range-based for over arrays and classes', function () {
+  var r = ok('struct List { int data[4]; int *begin() { return data; } ' +
+    'int *end() { return data + 4; } };\nnamespace geo { struct Path { int p[2]; }; ' +
+    'int *begin(Path &); int *end(Path &); }\nint f() {\n  int arr[3] = {1, 2, 3};\n' +
+    '  int total = 0;\n  for (int x : arr) total += x;\n  for (auto &x : arr) x = 0;\n' +
+    '  List l;\n  for (const auto &v : l) total += v;\n  geo::Path p;\n' +
+    '  for (int q : p) { if (q) continue; break; }\n  return total;\n}');
+  assert.deepEqual(r.dump.split('\n').filter(function (l) {
+    return /RangeFor|VarDecl (__|x|v|q)/.test(l);
+  }).map(function (l) { return l.trim(); }), [
+    'RangeForStmt', 'VarDecl __range \'int (&)[3]\' copy-init',
+    'VarDecl __begin \'int *\' copy-init', 'VarDecl __end \'int *\' copy-init',
+    'VarDecl x \'int\' copy-init',
+    'RangeForStmt', 'VarDecl __range \'int (&)[3]\' copy-init',
+    'VarDecl __begin \'int *\' copy-init', 'VarDecl __end \'int *\' copy-init',
+    'VarDecl x \'int &\' copy-init',
+    'RangeForStmt', 'VarDecl __range \'List &\' copy-init',
+    'VarDecl __begin \'int *\' copy-init', 'VarDecl __end \'int *\' copy-init',
+    'VarDecl v \'const int &\' copy-init',
+    'RangeForStmt', 'VarDecl __range \'geo::Path &\' copy-init',
+    'VarDecl __begin \'int *\' copy-init', 'VarDecl __end \'int *\' copy-init',
+    'VarDecl q \'int\' copy-init']);
+});
+
+test('reports invalid ranges', function () {
+  assert.deepEqual(errorsOf('void f(int n) { for (int z : n) {} }'),
+    ['invalid range expression of type \'int\'; no viable \'begin\' function available']);
+  assert.deepEqual(errorsOf('void f() { for (int w : {1, 2}) {} }'),
+    ['iterating over a braced initializer list requires std::initializer_list, which is not ' +
+      'supported yet']);
+  assert.deepEqual(errorsOf('extern int a[];\nvoid f() { for (int x : a) {} }'),
+    ['cannot use incomplete type \'int []\' as a range']);
+  assert.deepEqual(errorsOf('void f() { int a[2]; for (int *x : a) {} }'),
+    ['cannot initialize a variable of type \'int *\' with an lvalue of type \'int\'']);
+});

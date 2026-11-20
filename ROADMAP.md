@@ -255,3 +255,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Parser step 5e: overloaded operators, user-defined conversions (D-053).
 - **2026-11-19** — Parser step 5f: friends and static members (D-054); classes complete.
 - **2026-11-20** — Parser step 6a: auto, decltype, static_assert (D-055).
+- **2026-11-20** — Parser step 6b: range-based for (D-056).

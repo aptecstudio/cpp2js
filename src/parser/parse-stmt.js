@@ -336,14 +336,18 @@ Parser.prototype.parseForStatement = function () {
   var open = this.expectPunct('(', 'after \'for\'');
   var cond;
   var start;
+  var decls;
   this.sema.pushScope(ScopeKind.BLOCK, null);
   try {
     start = this.peek();
     if (this.isPunct(';')) {
       this.next();
     } else if (this.startsDeclSpecifier(0)) {
-      node.init = ast.createNode('DeclStmt', this.rangeOf(start), {
-        decls: this._parseForDeclaration() });
+      decls = this._parseForDeclaration();
+      if (decls.rangeFor) {
+        return this._finishRangeFor(keyword, open, decls.rangeFor);
+      }
+      node.init = ast.createNode('DeclStmt', this.rangeOf(start), { decls: decls });
     } else {
       node.init = this.sema.actOnExpressionStatement(this.parseExpression(),
         this.rangeFrom(start));
@@ -385,7 +389,7 @@ Parser.prototype._parseForDeclaration = function () {
   for (;;) {
     declarator = this.parseDeclarator(false);
     if (this.isPunct(':') && !decls.length) {
-      this.fail('range-based for loops are not supported yet');
+      return { rangeFor: { spec: spec, declarator: declarator } };
     }
     decl = this.sema.actOnDeclarator(spec, declarator);
     this.parseInitializer(decl);
@@ -399,3 +403,25 @@ Parser.prototype._parseForDeclaration = function () {
   this.expectPunct(';', 'in \'for\' statement specifier');
   return decls;
 };
+
+/**
+ * `: range ) statement` of a range-based for, inside the scope opened by
+ * parseForStatement (C++11 6.5.4).
+ */
+Parser.prototype._finishRangeFor = function (keyword, open, head) {
+  var node = ast.createNode('RangeForStmt', null, {});
+  var colon = this.next();
+  var rangeExpr = this.isPunct('{') ? this.parseBracedInitList() : this.parseExpression();
+  this.expectPunct(')', '', open);
+  this.sema.actOnRangeForHeader(node, head.spec, head.declarator, rangeExpr,
+    this.rangeFrom(colon));
+  this.sema.pushBreakable('loop', node);
+  try {
+    node.body = this.parseScopedStatement();
+  } finally {
+    this.sema.popBreakable();
+  }
+  node.range = this.rangeFrom(keyword);
+  return node;
+};
+
