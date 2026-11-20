@@ -193,6 +193,10 @@ Sema.prototype._declareField = function (spec, declarator, type, bitWidth, recor
   var decl;
   var diag;
   var width = null;
+  if (this.containsAuto(type)) {
+    this.error('\'auto\' not allowed in non-static class member', declarator.range);
+    type = this.types.builtin('int');
+  }
   if (spec.storage === 'static') {
     return this.actOnStaticDataMember(record, spec, declarator, type);
   }

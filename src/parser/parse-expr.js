@@ -128,6 +128,7 @@ Parser.prototype.startsTypeId = function (offset) {
   if (tok.kind === TokenKind.KEYWORD) {
     return !!(SIMPLE_TYPE_KEYWORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'enum' ||
+      tok.value === 'decltype' ||
       tok.value === 'class' || tok.value === 'struct' || tok.value === 'union');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT && tok.value === '::')) {

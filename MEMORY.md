@@ -1003,6 +1003,32 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
     `void S::f(Nested x)`; local classes print without their function.
 - **Reason**: C++11 11.3 and 9.4.
 
+### D-055 — auto, decltype, static_assert
+
+- **Status**: Accepted (agent, 2026-11-20; part of step 6a approved by the
+  owner).
+- **Decision**: `src/semantic/sema-cxx11.js`:
+  - `auto` is a placeholder type while the declarator is built and is
+    deduced from the initializer like a template argument (14.8.2.1):
+    the declared form (`auto`, `auto *`, `const auto &`, `auto &&`) is
+    matched against the initializer's type level by level; plain `auto`
+    decays and drops top-level cv; `auto &&` is a forwarding reference
+    (an lvalue gives `A &`). All declarators of one declaration must
+    deduce the same `auto`;
+  - **`auto x{e}` deduces e's type** (N3922, applied by GCC and Clang
+    also in C++11 mode); `auto x = {e}` would need
+    `std::initializer_list` and is rejected for now;
+  - `auto` is rejected in parameters, non-static members and typedefs;
+    `auto f()` without a trailing return type is an error (deduced
+    return types are C++14); parameters are visible in trailing return
+    types;
+  - `decltype(e)`: declared type of an unparenthesized name or member,
+    otherwise `T&` / `T&&` / `T` by value category;
+  - `static_assert(cond, "msg")` at namespace, class and block scope;
+    Clang's `static assertion failed: msg`; the message may be omitted
+    with a C++17-extension warning.
+- **Reason**: C++11 7.1.6.2, 7.1.6.4 and 7, matching current compilers.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

@@ -52,7 +52,7 @@ var NODE_KINDS = {
       'parent', 'scope']
   },
   EnumeratorDecl: { children: ['init'], props: ['name', 'value', 'type', 'parent'] },
-  StaticAssertDecl: { children: ['condition', 'message'], props: [] },
+  StaticAssertDecl: { children: ['condition'], props: ['message'] },
   FriendDecl: { children: [], props: ['target'] },
   EmptyDecl: { children: [], props: [] },
 

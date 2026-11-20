@@ -118,6 +118,7 @@ Parser.prototype.parseStatement = function () {
     }
   }
   if (this.startsDeclSpecifier(0) || this.isKeyword('using') || this.isKeyword('namespace') ||
+      this.isKeyword('static_assert') ||
       (this.isPunct('[') && this.isPunct('[', 1))) {
     return ast.createNode('DeclStmt', this.rangeOf(tok), { decls: this.parseDeclaration() });
   }

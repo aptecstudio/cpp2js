@@ -315,6 +315,9 @@ Parser.prototype.parseDeclaration = function () {
   if (this.isKeyword('extern') && this.peek(1).kind === TokenKind.STRING) {
     return [this.parseLinkageSpecification()];
   }
+  if (this.isKeyword('static_assert')) {
+    return [this.parseStaticAssert()];
+  }
   if (this.isKeyword('using')) {
     if (this.isKeyword('namespace', 1)) {
       return [this.parseUsingDirective()];
@@ -771,7 +774,13 @@ Parser.prototype.parseInitializer = function (decl) {
   }
   if (this.acceptPunct('=')) {
     style = 'copy';
-    init = this.isPunct('{') ? this.parseBracedInitList() : this.parseAssignmentExpression();
+    if (this.isPunct('{')) {
+      init = this.parseBracedInitList();
+      // `auto x = {1}` would deduce std::initializer_list (D-055).
+      init.isBracedCopy = true;
+    } else {
+      init = this.parseAssignmentExpression();
+    }
   } else if (this.isPunct('{')) {
     style = 'list';
     init = this.parseBracedInitList();
@@ -865,6 +874,10 @@ Parser.prototype.parseDeclSpecifiers = function () {
         spec.isConstexpr = true;
       } else if (tok.value === 'friend') {
         spec.isFriend = true;
+      } else if (tok.value === 'decltype' && !hasType) {
+        spec.namedType = this.parseDecltype();
+        hasType = true;
+        continue;
       } else if (tok.value === 'enum' && !hasType) {
         spec.namedType = this.parseEnumSpecifier(spec);
         hasType = true;
@@ -1044,6 +1057,38 @@ Parser.prototype._parseEnumerator = function (decl) {
   this.sema.actOnEnumerator(decl, nameTok.value, init, this.rangeOf(nameTok));
 };
 
+/** `decltype ( expression )` as a type specifier (C++11 7.1.6.2). */
+Parser.prototype.parseDecltype = function () {
+  var open;
+  var expr;
+  this.next();
+  open = this.expectPunct('(', 'after \'decltype\'');
+  expr = this.parseExpression();
+  this.expectPunct(')', '', open);
+  return this.sema.actOnDecltype(expr && expr.kind === 'ParenExpr' ? expr.expr : expr,
+    !!expr && expr.kind === 'ParenExpr');
+};
+
+/** `static_assert ( constant-expression [, string-literal] ) ;` */
+Parser.prototype.parseStaticAssert = function () {
+  var keyword = this.next();
+  var open = this.expectPunct('(', 'after \'static_assert\'');
+  var condition = this.parseConstantExpression();
+  var message = null;
+  if (this.acceptPunct(',')) {
+    if (this.peek().kind !== TokenKind.STRING) {
+      this.fail('expected string literal');
+    }
+    message = this.next().value;
+  } else {
+    this.diagnostics.warning('static_assert with no message is a C++17 extension',
+      this.rangeOf(this.peek()));
+  }
+  this.expectPunct(')', '', open);
+  this.expectPunct(';', 'after static_assert');
+  return this.sema.actOnStaticAssert(condition, message, this.rangeFrom(keyword));
+};
+
 /** Consumes `count` tokens. */
 Parser.prototype._skip = function (count) {
   var i;
@@ -1069,6 +1114,7 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
       FUNCTION_SPECIFIER_WORDS[tok.value] || tok.value === 'const' ||
       tok.value === 'volatile' || tok.value === 'auto' || tok.value === 'typedef' ||
       tok.value === 'constexpr' || tok.value === 'friend' || tok.value === 'enum' ||
+      tok.value === 'decltype' ||
       tok.value === 'class' || tok.value === 'struct' || tok.value === 'union');
   }
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&
@@ -1346,7 +1392,19 @@ Parser.prototype.parseFunctionSuffix = function () {
   }
   this._parseExceptionSpecification(suffix);
   if (this.acceptPunct('->')) {
-    suffix.trailingReturn = this.parseTypeId();
+    // Parameters are in scope in the trailing return type (C++11 3.3.4).
+    this.sema.pushScope('prototype', null);
+    try {
+      suffix.params.forEach(function (param) {
+        if (param.name) {
+          this.sema.scope.declare(param.name, this.sema.createDecl('ParamDecl', param.range,
+            { name: param.name, type: param.type }));
+        }
+      }, this);
+      suffix.trailingReturn = this.parseTypeId();
+    } finally {
+      this.sema.popScope();
+    }
   }
   suffix.range = this.rangeFrom(open);
   return suffix;
@@ -1386,6 +1444,10 @@ Parser.prototype.parseParameter = function () {
   if (spec.storage && spec.storage !== 'register') {
     this.diagnostics.error('invalid storage class specifier in function declarator',
       spec.range);
+  }
+  if (type && this.sema.containsAuto(type)) {
+    this.diagnostics.error('\'auto\' not allowed in function prototype', spec.range);
+    type = this.sema.types.builtin('int');
   }
   if (type && T.isVoid(type)) {
     this.diagnostics.error(declarator.name ? 'argument may not have \'void\' type' :

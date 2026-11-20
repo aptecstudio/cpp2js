@@ -1598,8 +1598,38 @@ Sema.prototype._stringArrayInit = function (type, literal) {
  */
 Sema.prototype.actOnVariableInit = function (decl, init, style) {
   var result;
+  var deduced;
+  var spec;
   if (!decl || decl.kind !== 'VarDecl') {
     return;
+  }
+  if (decl.autoSpec) {
+    spec = decl.autoSpec;
+    decl.autoSpec = null;
+    if (!init) {
+      this.error('declaration of variable \'' + decl.name + '\' with deduced type \'auto\' ' +
+        'requires an initializer', decl.range);
+      decl.type = this.types.builtin('int');
+      return;
+    }
+    deduced = this.deduceAuto(decl.type, init, decl.name, decl.range);
+    if (!deduced) {
+      decl.type = this.types.builtin('int');
+      decl.init = null;
+      return;
+    }
+    if (spec._autoBinding && spec._autoBinding.type !== this._lastAutoBinding) {
+      this.error('\'auto\' deduced as ' + this.quote(spec._autoBinding.type) +
+        ' in declaration of \'' + spec._autoBinding.name + '\' and deduced as ' +
+        this.quote(this._lastAutoBinding) + ' in declaration of \'' + decl.name + '\'',
+        decl.range);
+    }
+    spec._autoBinding = spec._autoBinding || { type: this._lastAutoBinding, name: decl.name };
+    decl.type = deduced;
+    if (init.kind === 'InitListExpr' && init.inits.length === 1 && style === 'list') {
+      init = init.inits[0];
+      style = 'copy';
+    }
   }
   decl.initStyle = init ? style : null;
   if (!init) {

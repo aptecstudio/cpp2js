@@ -233,8 +233,12 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     }
     this.fail('using-declarations in classes are not supported yet');
   }
-  if (this.isKeyword('static_assert') || this.isKeyword('template')) {
-    this.fail('\'' + tok.value + '\' in classes is not supported yet');
+  if (this.isKeyword('static_assert')) {
+    record.members.push(this.parseStaticAssert());
+    return;
+  }
+  if (this.isKeyword('template')) {
+    this.fail('templates are not supported yet');
   }
   if (this._startsConstructor(record)) {
     this._parseConstructorMember(record);

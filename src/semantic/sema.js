@@ -184,7 +184,7 @@ Sema.prototype.typeFromSpecifiers = function (spec) {
   if (spec.namedType) {
     type = spec.namedType;
   } else if (spec.isAuto) {
-    type = null;
+    type = this.autoPlaceholder();
   } else if (!spec.builtins.length) {
     this.error('C++ requires a type specifier for all declarations', spec.range);
     type = this.types.builtin('int');
@@ -283,14 +283,14 @@ Sema.prototype._functionType = function (returnType, suffix, label) {
   var params = [];
   var i;
   if (suffix.trailingReturn) {
-    if (returnType !== null) {
+    if (!(T.isRecord(returnType) && returnType.decl.isAutoPlaceholder)) {
       this.error('function with trailing return type must specify return type \'auto\', ' +
         'not ' + this._quoted(returnType), suffix.range);
     }
     returnType = suffix.trailingReturn;
-  } else if (returnType === null) {
-    this.error(label + ' declared with \'auto\' type but no trailing return type',
-      suffix.range);
+  } else if (this.containsAuto(returnType)) {
+    this.error('\'auto\' return without trailing return type; deduced return types are a ' +
+      'C++14 extension', suffix.range);
     returnType = this.types.builtin('int');
   }
   if (T.isArray(returnType)) {
@@ -365,6 +365,10 @@ Sema.prototype.actOnDeclarator = function (spec, declarator) {
     return null;
   }
   if (spec.isTypedef) {
+    if (this.containsAuto(type)) {
+      this.error('\'auto\' not allowed in typedef', declarator.range);
+      type = this.types.builtin('int');
+    }
     return this.declareTypedef(declarator.name, type, declarator.range, false);
   }
   if (T.isFunction(type)) {
@@ -418,6 +422,8 @@ Sema.prototype.declareVariable = function (spec, declarator, type) {
   if (T.isVoid(type)) {
     this.error('variable has incomplete type \'void\'', range);
     type = this.types.builtin('int');
+  } else if (this.containsAuto(type)) {
+    // Deduced from the initializer in actOnVariableInit.
   } else if ((T.isRecord(type) || T.isEnum(type)) && !T.isComplete(type) &&
       spec.storage !== 'extern') {
     this.error('variable has incomplete type ' + this._quoted(type), range);
@@ -432,6 +438,7 @@ Sema.prototype.declareVariable = function (spec, declarator, type) {
     parent: this.currentContext(),
     linkage: spec.linkage || null
   });
+  decl.autoSpec = this.containsAuto(type) ? spec : null;
   for (i = 0; i < previous.length; i++) {
     if (previous[i].kind === 'ParamDecl') {
       diag = this.error('redefinition of \'' + name + '\'', range);
@@ -1018,3 +1025,4 @@ require('./sema-special');
 require('./sema-inherit');
 require('./sema-operator');
 require('./sema-friend');
+require('./sema-cxx11');
