@@ -318,6 +318,7 @@ Parser.prototype._parseSignaturePattern = function (params) {
   var type;
   var suffix;
   var required;
+  var pack;
   try {
     this.sema.scope = this.sema.bindTemplateParameters({ params: params,
       scope: this.sema.scope }, placeholders);
@@ -342,6 +343,13 @@ Parser.prototype._parseSignaturePattern = function (params) {
   required = suffix.params.length;
   while (required > 0 && suffix.params[required - 1].defaultArg) {
     required--;
+  }
+  pack = suffix.params.filter(function (p) { return p.isPatternPack; })[0];
+  if (pack) {
+    // A trailing function parameter pack takes any number of arguments.
+    required = suffix.params.indexOf(pack);
+    return { type: type, requiredArgs: required, key: this.sema.patternKey(type) + '...',
+      packAt: suffix.params.indexOf(pack), packParam: pack.packParam };
   }
   return { type: type, requiredArgs: required, key: this.sema.patternKey(type) };
 };
@@ -570,10 +578,20 @@ Parser.prototype.parseTemplateArguments = function (tmpl) {
   var param;
   var expr;
   var arg;
+  var dots;
   this._templateArgDepth = (this._templateArgDepth || 0) + 1;
   try {
     while (!this._atCloseAngle()) {
       start = this.peek();
+      dots = this._findExpansionEnd(true);
+      if (dots >= 0) {
+        // `Ts...` / `Ns...`: one argument per pack element.
+        args = args.concat(this._expandTemplateArgument(tmpl, args.length, dots));
+        if (!this.acceptPunct(',')) {
+          break;
+        }
+        continue;
+      }
       // Arguments beyond the parameters belong to the trailing pack.
       param = params[Math.min(args.length, params.length - 1)];
       if (param && param.kind === 'value') {
@@ -679,12 +697,13 @@ Parser.prototype.instantiateClassTemplate = function (tmpl, args, range) {
   if (cached) {
     return this.sema.types.record(cached);
   }
-  if (!tmpl.isDefinition) {
+  // A partial specialization may be defined while the primary is not.
+  partial = this.sema.selectPartialSpecialization(tmpl, args, range);
+  if (!tmpl.isDefinition && !partial) {
     record = this.sema.startClassInstantiation({ template: tmpl, args: args, key: key }, 'class',
       range);
     return this.sema.types.record(record);
   }
-  partial = this.sema.selectPartialSpecialization(tmpl, args, range);
   state = this._saveState();
   this._resetForInstantiation();
   this._classInstantiations = (this._classInstantiations || 0) + 1;
@@ -849,6 +868,7 @@ Parser.prototype.instantiateFunctionTemplate = function (tmpl, args, sfinae) {
   var decl;
   var self = this;
   var failed;
+  var bound;
   args = this.completeTemplateArguments(tmpl, args, tmpl.range, true);
   if (!args) {
     return null;
@@ -863,11 +883,15 @@ Parser.prototype.instantiateFunctionTemplate = function (tmpl, args, sfinae) {
   saved = sfinae ? this._swapDiagnostics() : null;
   try {
     this._pos = tmpl.tokenStart;
-    this.sema.scope = this.sema.bindTemplateParameters(tmpl, args);
+    bound = this.sema.bindTemplateParameters(tmpl, args);
+    this.sema.scope = bound;
     this._functionInstantiation = (this._functionInstantiation || 0) + 1;
     decls = this.withRecovery(function () {
       return self.parseSimpleDeclaration();
     });
+    // The specialization is not a name of its own: in its body, the name
+    // still denotes the template (and its overloads).
+    bound.forget(tmpl.name);
   } finally {
     this._functionInstantiation--;
     failed = !!saved && this.diagnostics.hasErrors();
@@ -899,5 +923,157 @@ Parser.prototype._deferFunctionTemplateBody = function (decl) {
   decl.pendingBody = { pos: this._pos, scope: this.sema.scope };
   this._skipBraces();
   return true;
+};
+
+// ---------------------------------------------------------------------------
+// Pack expansions (C++11 14.5.3/4).
+
+/**
+ * If the element starting at the current token is a pack expansion
+ * (ends with `...`), returns the position of the `...`, else -1.
+ *
+ * @param {boolean} inAngles The element is a template argument.
+ */
+Parser.prototype._findExpansionEnd = function (inAngles) {
+  var i = this._pos;
+  var depth = 0;
+  var tok;
+  var prev = null;
+  for (;;) {
+    tok = this._tokens[i];
+    if (!tok || tok.kind === TokenKind.EOF) {
+      return -1;
+    }
+    if (tok.kind === TokenKind.PUNCT) {
+      if (tok.value === '(' || tok.value === '[' || tok.value === '{') {
+        depth++;
+      } else if (tok.value === ')' || tok.value === ']' || tok.value === '}') {
+        if (depth === 0) {
+          break;
+        }
+        depth--;
+      } else if (depth === 0 && (tok.value === ',' || tok.value === ';' ||
+          (inAngles && (tok.value === '>' || tok.value === '>>')))) {
+        break;
+      } else if (inAngles && tok.value === '<' && prev && prev.kind === TokenKind.IDENTIFIER &&
+          this.sema.classifyName(prev.value).kind === 'template') {
+        depth++;
+        prev = tok;
+        i++;
+        while (depth > 0 && this._tokens[i] && this._tokens[i].kind !== TokenKind.EOF) {
+          if (this._tokens[i].value === '<') {
+            depth++;
+          } else if (this._tokens[i].value === '>') {
+            depth--;
+          } else if (this._tokens[i].value === '>>') {
+            depth -= 2;
+          }
+          i++;
+        }
+        if (depth < 0) {
+          return -1;
+        }
+        depth = 0;
+        prev = this._tokens[i - 1];
+        continue;
+      }
+    }
+    prev = tok;
+    i++;
+  }
+  return prev && prev.kind === TokenKind.PUNCT && prev.value === '...' ? i - 1 : -1;
+};
+
+/** Parameter packs named between two token positions. */
+Parser.prototype._packsIn = function (start, end) {
+  var packs = [];
+  var i;
+  var decl;
+  for (i = start; i < end; i++) {
+    if (this._tokens[i].kind === TokenKind.IDENTIFIER) {
+      decl = require('../semantic/scope').lookupUnqualified(this.sema.scope,
+        this._tokens[i].value).decls[0];
+      if (this.sema.packElements(decl) && this.sema.packIndex(decl) === undefined &&
+          packs.indexOf(decl) === -1) {
+        packs.push(decl);
+      }
+    }
+  }
+  return packs;
+};
+
+/**
+ * Re-parses the pattern between the current position and `dots` once per
+ * pack element, each time with the packs naming that element.
+ *
+ * @param {function(number): *} parseOne Parses one instance.
+ * @returns {Array} The parsed instances.
+ */
+Parser.prototype._expand = function (dots, parseOne) {
+  var start = this._pos;
+  var packs = this._packsIn(start, dots);
+  var length;
+  var out = [];
+  var saved = this.sema.packIndices;
+  var savedDots = this._expansionDots;
+  var i;
+  var self = this;
+  if (!packs.length) {
+    this.fail('pattern of pack expansion contains no unexpanded parameter packs',
+      this._tokens[dots]);
+  }
+  length = this.sema.packElements(packs[0]).length;
+  packs.forEach(function (p) {
+    if (self.sema.packElements(p).length !== length) {
+      self.fail('pack expansion contains parameter packs \'' + packs[0].name + '\' and \'' +
+        p.name + '\' that have different lengths (' + length + ' vs. ' +
+        self.sema.packElements(p).length + ')', self._tokens[dots]);
+    }
+  });
+  try {
+    // The `...` ends the pattern: declarators must not take it.
+    this._expansionDots = dots;
+    for (i = 0; i < length; i++) {
+      this.sema.packIndices = Object.create(saved || null);
+      packs.forEach(function (p) {
+        self.sema.packIndices[p.id] = i;
+      });
+      this._pos = start;
+      out.push(parseOne.call(this, i));
+      if (this._pos !== dots) {
+        this.fail('expected \'...\'');
+      }
+    }
+  } finally {
+    this.sema.packIndices = saved;
+    this._expansionDots = savedDots;
+  }
+  this._pos = dots + 1;
+  return out;
+};
+
+/** A pack expansion inside a template argument list. */
+Parser.prototype._expandTemplateArgument = function (tmpl, position, dots) {
+  var params = tmpl.params;
+  var self = this;
+  var pattern = !!this._patternMode;
+  var packs = this._packsIn(this._pos, dots);
+  var args = this._expand(dots, function () {
+    var param = params[Math.min(position, params.length - 1)];
+    var start = self.peek();
+    var expr;
+    if (param && param.kind === 'value') {
+      expr = self.parseConditionalExpression();
+      return expr ? self.sema.nonTypeArgument(param, expr, self.rangeFrom(start)) : null;
+    }
+    return { kind: 'type', type: self.parseTypeId(), range: self.rangeFrom(start) };
+  });
+  if (pattern && packs.length && this.sema.packElements(packs[0]).length === 1 &&
+      this.sema.packElements(packs[0])[0].packElement && args[0]) {
+    // In a pattern, `T...` stands for any number of arguments.
+    args[0].packExpansion = true;
+    args[0].packParam = packs[0].templateParamIndex;
+  }
+  return args;
 };
 

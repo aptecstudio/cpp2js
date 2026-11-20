@@ -53,6 +53,18 @@ Scope.prototype.declare = function (name, decl) {
 };
 
 /**
+ * Removes the declarations of a name from this scope.
+ *
+ * @param {string} name
+ * @returns {void}
+ */
+Scope.prototype.forget = function (name) {
+  var own = this._names[name] || [];
+  this.decls = this.decls.filter(function (d) { return own.indexOf(d) === -1; });
+  delete this._names[name];
+};
+
+/**
  * Records `using namespace N;` in this scope.
  *
  * @param {Object} namespaceDecl

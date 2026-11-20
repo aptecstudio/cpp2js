@@ -68,7 +68,17 @@ Parser.prototype.parseConstantExpression = function () {
 /** expression-list: initializer-clauses separated by commas. */
 Parser.prototype.parseExpressionList = function () {
   var list = [];
+  var dots;
   do {
+    dots = this._findExpansionEnd(false);
+    if (dots >= 0) {
+      // `f(args...)`, `g(h(args)...)`: one argument per pack element.
+      list = list.concat(this._expand(dots, function () {
+        return this.isPunct('{') ? this.parseBracedInitList() :
+          this.parseAssignmentExpression();
+      }));
+      continue;
+    }
     list.push(this.isPunct('{') ? this.parseBracedInitList() : this.parseAssignmentExpression());
   } while (this.acceptPunct(','));
   return list;
@@ -207,8 +217,14 @@ Parser.prototype.parseSizeof = function () {
   var open;
   var type;
   var operand;
-  if (this.isPunct('...')) {
-    this.fail('\'sizeof...\' requires variadic templates, which are not supported yet');
+  if (this.acceptPunct('...')) {
+    open = this.expectPunct('(', 'after \'sizeof...\'');
+    if (this.peek().kind !== TokenKind.IDENTIFIER) {
+      this.fail('expected the name of a parameter pack');
+    }
+    type = this.next();
+    this.expectPunct(')', '', open);
+    return this.sema.actOnSizeofPack(type.value, this.rangeFrom(keyword));
   }
   if (this.isPunct('(') && this.startsTypeId(1)) {
     open = this.next();

@@ -232,6 +232,7 @@ Sema.prototype.bindTemplateParameters = function (tmpl, args) {
       decl.pack = arg.elements;
       decl.packKind = param.kind;
       decl.isTemplateParam = true;
+      decl.templateParamIndex = i;
       scope.declare(param.name, decl);
       return;
     }
@@ -367,10 +368,12 @@ Sema.prototype.placeholderArguments = function (tmpl) {
       type = self.dependentType(p.name || 'type-parameter-' + index);
       type.decl.templateParamIndex = index;
       type.decl.paramOf = tmpl;
-      return p.isPack ? { kind: 'pack', elements: [], placeholder: type } :
-        { kind: 'type', type: type };
+      // A pack stands for one placeholder element in a pattern.
+      return p.isPack ? { kind: 'pack', elements: [{ kind: 'type', type: type,
+        packElement: true }], placeholder: true } : { kind: 'type', type: type };
     }
-    return p.isPack ? { kind: 'pack', elements: [] } :
+    return p.isPack ? { kind: 'pack', elements: [{ kind: 'value', value: null, type: p.type,
+      dependentIndex: index, packElement: true }], placeholder: true } :
       { kind: 'value', value: null, type: p.type, dependentIndex: index };
   });
 };
@@ -401,7 +404,7 @@ Sema.prototype.deduceFromCall = function (tmpl, explicitArgs, args) {
       value: explicitArgs[i].value, explicit: true };
   }
   if (args.length < pattern.requiredArgs || (args.length > params.length &&
-      !pattern.type.variadic)) {
+      !pattern.type.variadic && pattern.packAt === undefined)) {
     return { args: null, reason: 'requires ' + (args.length < pattern.requiredArgs ?
       (pattern.requiredArgs === params.length ? '' : 'at least ') + pattern.requiredArgs :
       (pattern.requiredArgs === params.length ? '' : 'at most ') + params.length) +
@@ -410,10 +413,16 @@ Sema.prototype.deduceFromCall = function (tmpl, explicitArgs, args) {
       (args.length === 1 ? 'was' : 'were') + ' provided' };
   }
   for (i = 0; i < args.length && i < params.length && !failure; i++) {
+    if (pattern.packAt !== undefined && i >= pattern.packAt) {
+      break;
+    }
     if (!this.isDependentType(params[i]) || !args[i].type) {
       continue;
     }
     failure = this._deduceArgument(params[i], args[i], deduced);
+  }
+  if (!failure && pattern.packAt !== undefined) {
+    failure = this._deducePack(pattern, args, deduced);
   }
   if (failure) {
     return { args: null, reason: failure };
@@ -425,6 +434,38 @@ Sema.prototype.deduceFromCall = function (tmpl, explicitArgs, args) {
     }
   }
   return { args: deduced, reason: null };
+};
+
+/**
+ * Deduces a template parameter pack from the call arguments matching a
+ * trailing function parameter pack (14.8.2.1/1).
+ */
+Sema.prototype._deducePack = function (pattern, args, deduced) {
+  var elementPattern = pattern.type.params[pattern.packAt];
+  var packIndex = pattern.packParam;
+  var explicit = deduced[packIndex] && deduced[packIndex].kind === 'pack' ?
+    deduced[packIndex].elements.slice() : [];
+  var elements = [];
+  var i;
+  var one;
+  var reason;
+  for (i = pattern.packAt; i < args.length; i++) {
+    one = deduced.slice();
+    one[packIndex] = explicit[i - pattern.packAt] || undefined;
+    reason = this._deduceArgument(elementPattern, args[i], one);
+    if (reason) {
+      return reason;
+    }
+    elements.push(one[packIndex] || { kind: 'type', type: args[i].type.unqualified });
+    // Other parameters deduced through the pack must agree.
+    one.forEach(function (d, k) {
+      if (k !== packIndex && d && !deduced[k]) {
+        deduced[k] = d;
+      }
+    });
+  }
+  deduced[packIndex] = { kind: 'pack', elements: elements };
+  return null;
 };
 
 /** Deduces from one parameter/argument pair; returns a failure reason. */
@@ -773,6 +814,32 @@ Sema.prototype.matchArgumentLists = function (patterns, args, deduced) {
   var i;
   var p;
   var a;
+  var last = patterns[patterns.length - 1];
+  var elements;
+  var one;
+  var k;
+  if (args.length && args[args.length - 1].kind === 'pack') {
+    args = args.slice(0, -1).concat(args[args.length - 1].elements);
+  }
+  if (last && last.packExpansion) {
+    // `X<H, T...>`: the trailing pattern matches the remaining arguments.
+    if (args.length < patterns.length - 1 ||
+        !this.matchArgumentLists(patterns.slice(0, -1), args.slice(0, patterns.length - 1),
+          deduced)) {
+      return false;
+    }
+    elements = [];
+    for (k = patterns.length - 1; k < args.length; k++) {
+      one = [];
+      if (!this.matchArgumentLists([Object.create(last, { packExpansion: { value: false } })],
+          [args[k]], one)) {
+        return false;
+      }
+      elements.push(one[last.packParam] || args[k]);
+    }
+    deduced[last.packParam] = { kind: 'pack', elements: elements };
+    return true;
+  }
   if (patterns.length !== args.length) {
     return false;
   }
@@ -816,6 +883,11 @@ Sema.prototype.selectPartialSpecialization = function (tmpl, args, range) {
     var deduced = [];
     if (self.matchArgumentLists(spec.patternArgs, args, deduced) &&
         spec.params.every(function (p, i) { return !!deduced[i] || p.isPack; })) {
+      spec.params.forEach(function (p, i) {
+        if (p.isPack && !deduced[i]) {
+          deduced[i] = { kind: 'pack', elements: [] };
+        }
+      });
       matches.push({ spec: spec, args: deduced });
     }
   });
@@ -838,4 +910,65 @@ Sema.prototype.selectPartialSpecialization = function (tmpl, args, range) {
     return null;
   }
   return best[0];
+};
+
+// ---------------------------------------------------------------------------
+// Variadic templates (C++11 14.5.3).
+
+/** Elements of a parameter pack declaration, or null if not a pack. */
+Sema.prototype.packElements = function (decl) {
+  if (!decl) {
+    return null;
+  }
+  if (decl.kind === 'TypedefDecl' && decl.pack) {
+    return decl.pack;
+  }
+  if (decl.kind === 'ParamDecl' && decl.packElements) {
+    return decl.packElements;
+  }
+  return null;
+};
+
+/** Current expansion index of a pack, or undefined outside an expansion. */
+Sema.prototype.packIndex = function (decl) {
+  return this.packIndices ? this.packIndices[decl.id] : undefined;
+};
+
+/**
+ * Inside a pack expansion, a template parameter pack element: a type, or
+ * a constant (as an enumerator-like declaration, cached per element).
+ */
+Sema.prototype.packElementDecl = function (decl) {
+  var index = this.packIndex(decl);
+  var element;
+  if (index === undefined) {
+    return null;
+  }
+  if (decl.kind === 'ParamDecl') {
+    return decl.packElements[index];
+  }
+  element = decl.pack[index];
+  decl.elementDecls = decl.elementDecls || [];
+  if (!decl.elementDecls[index]) {
+    decl.elementDecls[index] = element.kind === 'type' ?
+      this.createDecl('TypedefDecl', decl.range, { name: decl.name, type: element.type }) :
+      this.createDecl('EnumeratorDecl', decl.range, { name: decl.name, value: element.value,
+        type: element.type });
+    if (element.kind !== 'type') {
+      decl.elementDecls[index].dependentIndex = element.dependentIndex;
+    }
+  }
+  return decl.elementDecls[index];
+};
+
+/** `sizeof...(pack)` (14.5.3/7). */
+Sema.prototype.actOnSizeofPack = function (name, range) {
+  var decl = scopes.lookupUnqualified(this.scope, name).decls[0];
+  var elements = this.packElements(decl);
+  if (!elements) {
+    this.error('\'' + name + '\' does not refer to the name of a parameter pack', range);
+    return null;
+  }
+  return this._expr('IntegerLiteral', range, { value: I.fromNumber(elements.length) },
+    this.types.builtin('unsigned int'), 'prvalue');
 };

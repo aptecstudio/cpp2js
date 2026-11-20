@@ -1189,6 +1189,40 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   standard library.
 - **Not yet**: explicit specializations of members of class templates.
 
+### D-062 — Variadic templates by per-element replay
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T4).
+- **Decision**:
+  - a template parameter pack is bound to a list of arguments; a function
+    parameter pack `Ts... args` expands into one parameter per element
+    (all named `args`), and the body sees a pack holder `args` whose
+    elements are those parameters (an empty pack still declares it);
+  - every **pack expansion** (`f(args...)`, `g(h(args)...)`, `{xs...}`,
+    `X<Ts...>`) re-parses the tokens of its pattern once per element,
+    with each pack in the pattern naming that element
+    (`sema.packIndices`); packs of different lengths are an error, and a
+    pack named outside an expansion is
+    `expression contains unexpanded parameter pack`;
+  - in patterns (signatures and partial specializations) a pack has one
+    placeholder element; a trailing function parameter pack takes the
+    remaining call arguments (each deduced against the element pattern),
+    and a trailing `T...` in a partial specialization matches the
+    remaining template arguments;
+  - `sizeof...(X)` is an integer constant;
+  - a partial specialization is used even if the primary template is
+    only declared;
+  - inside an instantiated function body, the function name denotes the
+    template again (the specialization is removed from the template
+    scope), so recursion over packs reaches other specializations.
+- **Reason**: the token-replay design (D-059) makes expansion a loop
+  over the same tokens, without a separate tree transformation.
+- **Discarded**: substituting into a dependent AST (needs a full
+  dependent-type representation).
+- **Not yet**: several packs in function templates (only the last one is
+  accepted, as for class templates); pack expansions in base lists,
+  member initializers and lambda captures; diagnosing unexpanded packs in
+  templates that are never instantiated.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

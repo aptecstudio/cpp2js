@@ -192,3 +192,44 @@ test('uses explicit function specializations', function () {
   function T(d) { return require('../../src/semantic/types').typeToString(d.type); }
   assert.deepEqual(specs.sort(), ['int (char) explicit', 'int (double) explicit', 'int (int)']);
 });
+
+test('deduces and expands function parameter packs', function () {
+  var r = ok('int sum() { return 0; }\n' +
+    'template <class T, class... R> T sum(T first, R... rest) { return first + sum(rest...); }\n' +
+    'template <class... Ts> int count(Ts... xs) { return sizeof...(Ts) + sizeof...(xs); }\n' +
+    'int g(int, int, int);\n' +
+    'template <class... Ts> int call(Ts... xs) { int a[] = { xs... }; return g(xs + 1 ...); }\n' +
+    'template <class... Ts> void sink(Ts &&... xs);\n' +
+    'int f() { int s = 0; sink(1, s); return sum(1, 2, 3) + count() + count(1, \'a\', 2.5) + ' +
+    'call(1, 2, 3); }');
+  assert.deepEqual(lines(r, /^DeclRefExpr sink/), ['DeclRefExpr sink \'void (int &&, int &)\' ' +
+    'lvalue']);
+  assert.deepEqual(lines(r, /^FunctionDecl (sum|count|call) /), [
+    'FunctionDecl sum \'int ()\'', 'FunctionDecl sum \'int (int, int, int)\'', 'FunctionDecl count \'int ()\'',
+    'FunctionDecl count \'int (int, char, double)\'', 'FunctionDecl call \'int (int, int, int)\'',
+    'FunctionDecl sum \'int (int, int)\'', 'FunctionDecl sum \'int (int)\'']);
+});
+
+test('matches packs in partial specializations', function () {
+  var r = ok('template <class... Ts> struct Tuple;\n' +
+    'template <> struct Tuple<> { static const int size = 0; };\n' +
+    'template <class H, class... T> struct Tuple<H, T...> : Tuple<T...> {\n' +
+    '  H head; static const int size = 1 + sizeof...(T);\n};\n' +
+    'Tuple<int, char, double> t;\nint arr[Tuple<int, char>::size];\nchar c = t.head;');
+  assert.deepEqual(lines(r, /^(RecordDecl|BaseSpecifier)/).slice(0, 6), [
+    'RecordDecl struct Tuple<> size=1 align=1', 'RecordDecl struct Tuple<double> size=8 align=8',
+    'BaseSpecifier public Tuple<>', 'RecordDecl struct Tuple<char, double> size=16 align=8',
+    'BaseSpecifier public Tuple<double>', 'RecordDecl struct Tuple<int, char, double> size=24 align=8']);
+  assert.deepEqual(lines(r, /^VarDecl arr/), ['VarDecl arr \'int [2]\'']);
+});
+
+test('reports misused parameter packs', function () {
+  assert.deepEqual(errorsOf('int g(int);\ntemplate <class... Ts> int bad(Ts... xs) { return g(xs); }\n' +
+    'int f() { return bad(1); }'), ['expression contains unexpanded parameter pack \'xs\'']);
+  assert.deepEqual(errorsOf('int g(int, int);\n' +
+    'template <class... A> struct S { template <class... B> static void f(); };\n' +
+    'template <class... Ts> int h(Ts... xs) { return g(xs...); }\nint f() { return h(1); }'),
+    ['too few arguments to function call, expected 2, have 1']);
+  assert.deepEqual(errorsOf('template <class... Ts, class U> struct S {};'),
+    ['template parameter pack must be the last template parameter']);
+});

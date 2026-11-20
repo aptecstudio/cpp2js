@@ -842,9 +842,18 @@ Parser.prototype.parseInitializer = function (decl) {
 Parser.prototype.parseBracedInitList = function () {
   var open = this.expectPunct('{');
   var inits = [];
+  var dots;
   while (!this.isPunct('}')) {
-    inits.push(this.isPunct('{') ? this.parseBracedInitList() :
-      this.parseAssignmentExpression());
+    dots = this._findExpansionEnd(false);
+    if (dots >= 0) {
+      inits = inits.concat(this._expand(dots, function () {
+        return this.isPunct('{') ? this.parseBracedInitList() :
+          this.parseAssignmentExpression();
+      }));
+    } else {
+      inits.push(this.isPunct('{') ? this.parseBracedInitList() :
+        this.parseAssignmentExpression());
+    }
     if (!this.acceptPunct(',')) {
       break;
     }
@@ -943,6 +952,14 @@ Parser.prototype.parseDeclSpecifiers = function () {
           this._splitGreater = true;
         }
         spec.namedType = scan.info.type;
+        hasType = true;
+        continue;
+      }
+      if (scan && !scan.error && scan.info.kind === 'pack') {
+        // A template parameter pack: only valid in a pack expansion.
+        this._skip(scan.length);
+        spec.packDecl = scan.info.decls[0];
+        spec.namedType = this.sema.types.builtin('int');
         hasType = true;
         continue;
       }
@@ -1210,6 +1227,9 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
   if (tok.kind === TokenKind.IDENTIFIER || (tok.kind === TokenKind.PUNCT &&
       tok.value === '::')) {
     scan = this._scanQualifiedName(offset);
+    if (scan && scan.info.kind === 'pack' && scan.info.decls[0].packKind === 'type') {
+      return true;
+    }
     // An invalid template-id or a class template without arguments still
     // starts a declaration (the error is reported there).
     return !!scan && !scan.error && (scan.info.kind === 'type' || scan.info.kind === 'error' ||
@@ -1265,6 +1285,10 @@ Parser.prototype.parseDeclarator = function (abstract) {
     }
   }
 
+  if (abstract && this._pos !== this._expansionDots && this.acceptPunct('...')) {
+    // `Ts... args`: a function parameter pack (14.5.3/5).
+    declarator.isPack = true;
+  }
   tok = this.peek();
   if (!abstract && this._startsQualifiedOperator()) {
     declarator.qualifier = this._parseOperatorQualifier();
@@ -1465,6 +1489,7 @@ Parser.prototype._startsParameters = function (offset) {
  */
 Parser.prototype.parseFunctionSuffix = function (isLambda) {
   var open = this.expectPunct('(');
+  var param;
   var suffix = { kind: 'function', params: [], variadic: false, isConst: false,
     isVolatile: false, refQualifier: '', noexcept: null, trailingReturn: null, range: null };
   if (this.isKeyword('void') && this.isPunct(')', 1)) {
@@ -1475,7 +1500,12 @@ Parser.prototype.parseFunctionSuffix = function (isLambda) {
         suffix.variadic = true;
         break;
       }
-      suffix.params.push(this.parseParameter());
+      param = this.parseParameter();
+      if (param.emptyPack) {
+        suffix.params.emptyPacks = (suffix.params.emptyPacks || []).concat(param);
+      } else {
+        [].concat(param).forEach(function (p) { suffix.params.push(p); });
+      }
       if (!this.acceptPunct(',')) {
         if (this.acceptPunct('...')) {
           suffix.variadic = true;
@@ -1551,9 +1581,33 @@ Parser.prototype._parseExceptionSpecification = function (suffix) {
 Parser.prototype.parseParameter = function () {
   var spec = this.parseDeclSpecifiers();
   var declarator = this.parseDeclarator(true);
-  var base = this.sema.typeFromSpecifiers(spec);
-  var type = this.sema.typeFromDeclarator(base, declarator);
+  var base;
+  var type;
   var defaultArg = null;
+  var self = this;
+  if (spec.packDecl || declarator.isPack) {
+    if (!spec.packDecl || !declarator.isPack) {
+      this.diagnostics.error(spec.packDecl ? 'declaration type contains unexpanded parameter ' +
+        'pack \'' + spec.packDecl.name + '\'' : 'type of a parameter pack must contain a ' +
+        'template parameter pack', declarator.range);
+      return { name: declarator.name, type: this.sema.types.builtin('int'), defaultArg: null,
+        range: declarator.range };
+    }
+    if (!spec.packDecl.pack.length) {
+      return { emptyPack: true, name: declarator.name || '__pack', range: declarator.range };
+    }
+    // One parameter per element of the template parameter pack.
+    return spec.packDecl.pack.map(function (element, index) {
+      var elementSpec = Object.create(spec);
+      elementSpec.namedType = element.type;
+      return { name: declarator.name, type: self.sema.typeFromDeclarator(
+        self.sema.typeFromSpecifiers(elementSpec), declarator), defaultArg: null,
+        range: declarator.range, packName: declarator.name || '__pack', packIndex: index,
+        packParam: spec.packDecl.templateParamIndex, isPatternPack: !!element.packElement };
+    });
+  }
+  base = this.sema.typeFromSpecifiers(spec);
+  type = this.sema.typeFromDeclarator(base, declarator);
   if (spec.storage && spec.storage !== 'register') {
     this.diagnostics.error('invalid storage class specifier in function declarator',
       spec.range);

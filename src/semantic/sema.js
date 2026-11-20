@@ -144,6 +144,7 @@ Sema.prototype.classifyQualifiedName = function (qualifier, name) {
 
 Sema.prototype._classify = function (result) {
   var decl = result.decls[0];
+  var element;
   if (!decl) {
     return { kind: 'unknown', decls: [] };
   }
@@ -173,6 +174,14 @@ Sema.prototype._classify = function (result) {
     }), all: result.decls };
   }
   if (decl.kind === 'TypedefDecl' && decl.pack) {
+    // Inside a pack expansion the pack names its current element.
+    element = this.packElementDecl ? this.packElementDecl(decl) : null;
+    if (element && element.kind === 'TypedefDecl') {
+      return { kind: 'type', decls: [element], type: element.type };
+    }
+    if (element) {
+      return { kind: 'value', decls: [element] };
+    }
     return { kind: 'pack', decls: result.decls };
   }
   return { kind: 'value', decls: result.decls };
@@ -615,7 +624,9 @@ Sema.prototype._createParams = function (params) {
   var diag;
   var i;
   for (i = 0; i < params.length; i++) {
-    if (params[i].name && seen[params[i].name]) {
+    if (params[i].packName && params[i].packIndex > 0) {
+      // Elements of a function parameter pack share its name.
+    } else if (params[i].name && seen[params[i].name]) {
       diag = this.error('redefinition of parameter \'' + params[i].name + '\'',
         params[i].range);
       this.note(diag, 'previous declaration is here', seen[params[i].name]);
@@ -632,7 +643,12 @@ Sema.prototype._createParams = function (params) {
         this.types.adjustParameter(params[i].type)) : null,
       index: i
     }));
+    if (params[i].packName) {
+      out[out.length - 1].packName = params[i].packName;
+    }
   }
+  // Function parameter packs that expanded to no parameters.
+  out.emptyPacks = params.emptyPacks || [];
   return out;
 };
 
@@ -675,6 +691,7 @@ Sema.prototype.actOnStartFunctionBody = function (decl) {
   var diag;
   var i;
   var params;
+  var packs;
   while (prev) {
     if (prev.body) {
       diag = this.error('redefinition of \'' + decl.name + '\'', decl.range);
@@ -685,8 +702,21 @@ Sema.prototype.actOnStartFunctionBody = function (decl) {
   }
   this.pushScope(ScopeKind.FUNCTION, decl);
   params = decl.params;
+  packs = Object.create(null);
   for (i = 0; i < params.length; i++) {
     params[i].ownerFunction = decl;
+    if (params[i].packName) {
+      // `Ts... args` declares one pack holding the expanded parameters.
+      if (!packs[params[i].packName]) {
+        packs[params[i].packName] = this.createDecl('ParamDecl', params[i].range,
+          { name: params[i].packName, type: params[i].type });
+        packs[params[i].packName].packElements = [];
+        packs[params[i].packName].ownerFunction = decl;
+        this.scope.declare(params[i].packName, packs[params[i].packName]);
+      }
+      packs[params[i].packName].packElements.push(params[i]);
+      continue;
+    }
     if (!params[i].name) {
       continue;
     }
@@ -695,6 +725,12 @@ Sema.prototype.actOnStartFunctionBody = function (decl) {
       this.scope.declare(params[i].name, params[i]);
     }
   }
+  (params.emptyPacks || []).forEach(function (p) {
+    var pack = this.createDecl('ParamDecl', p.range, { name: p.name, type: null });
+    pack.packElements = [];
+    pack.ownerFunction = decl;
+    this.scope.declare(p.name, pack);
+  }, this);
 };
 
 Sema.prototype.actOnFinishFunctionBody = function (decl, body) {

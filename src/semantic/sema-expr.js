@@ -353,6 +353,14 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
     return null;
   }
   decl = result.decls[0];
+  if (this.packElements(decl)) {
+    // A parameter pack may only be used inside a pack expansion.
+    if (this.packIndex(decl) === undefined) {
+      this.error('expression contains unexpanded parameter pack \'' + name + '\'', range);
+      return null;
+    }
+    decl = this.packElementDecl(decl);
+  }
   if (decl.kind === 'FieldDecl' || (decl.kind === 'FunctionDecl' && decl.isMethod &&
       !decl.isStatic)) {
     return this.implicitMemberAccess(result.decls, range, qualifier &&
