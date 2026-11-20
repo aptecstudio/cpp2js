@@ -524,13 +524,19 @@ Sema.prototype._buildMemberExpr = function (object, objType, isArrow, decls, ran
     return this._expr('MemberExpr', range, { object: object, member: member,
       isArrow: isArrow }, type, objectCategory === 'lvalue' ? 'lvalue' : 'xvalue');
   }
-  if (member.kind === 'FunctionDecl') {
+  if (member.kind === 'FunctionDecl' || (member.kind === 'TemplateDecl' &&
+      member.templateKind === 'function')) {
     methods = require('./sema-expr').uniqueFunctions(decls.filter(function (d) {
       return d.kind === 'FunctionDecl';
     }));
-    node = this._expr('MemberExpr', range, { object: object, member: methods[0],
-      isArrow: isArrow }, methods[0].type, 'prvalue');
+    node = this._expr('MemberExpr', range, { object: object, member: methods[0] || member,
+      isArrow: isArrow }, methods.length ? methods[0].type : this.types.builtin('void'),
+      'prvalue');
     node.candidates = methods;
+    // Member function templates: specializations are added at the call.
+    node.templateCandidates = decls.filter(function (d) {
+      return d.kind === 'TemplateDecl' && d.templateKind === 'function';
+    });
     node.namingClass = namingClass;
     node.nameRange = nameRange;
     return node;
@@ -727,8 +733,9 @@ Sema.prototype.actOnMemberCall = function (callee, args, range) {
     this.error('call to non-static member function without an object argument', range);
     return null;
   }
-  chosen = this.resolveMethodOverload(callee.candidates, objType, args, range,
-    callee.member.name);
+  chosen = this.resolveMethodOverload(callee.templateCandidates &&
+    callee.templateCandidates.length ? this._withTemplateCandidates(callee, args, []) :
+    callee.candidates, objType, args, range, callee.member.name);
   if (!chosen) {
     return null;
   }

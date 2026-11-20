@@ -243,7 +243,8 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     return;
   }
   if (this.isKeyword('template')) {
-    this.fail('member templates are not supported yet');
+    this.parseMemberTemplate(record);
+    return;
   }
   if (this._startsConstructor(record)) {
     this._parseConstructorMember(record);

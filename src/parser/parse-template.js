@@ -12,6 +12,7 @@ var Parser = require('./parser').Parser;
 var TokenKind = require('../lexer/lexer').TokenKind;
 var T = require('../semantic/types');
 var ScopeKind = require('../semantic/scope').ScopeKind;
+var Scope = require('../semantic/scope').Scope;
 
 // ---------------------------------------------------------------------------
 // Parser state, for instantiations that re-parse other tokens.
@@ -27,7 +28,8 @@ Parser.prototype._saveState = function () {
     argDepth: this._templateArgDepth,
     splitGreater: this._splitGreater,
     breakables: this.sema._breakableStack,
-    functionStates: this.sema._functionStates
+    functionStates: this.sema._functionStates,
+    memberTemplateScope: this._memberTemplateScope
   };
 };
 
@@ -42,6 +44,7 @@ Parser.prototype._restoreState = function (state) {
   this._splitGreater = state.splitGreater;
   this.sema._breakableStack = state.breakables;
   this.sema._functionStates = state.functionStates;
+  this._memberTemplateScope = state.memberTemplateScope;
 };
 
 /** A fresh state for parsing a template's tokens. */
@@ -54,6 +57,7 @@ Parser.prototype._resetForInstantiation = function () {
   this._splitGreater = false;
   this.sema._breakableStack = [];
   this.sema._functionStates = [];
+  this._memberTemplateScope = null;
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +160,49 @@ Parser.prototype.parseTemplateDeclaration = function () {
 };
 
 /**
+ * `template <params> member-declaration` inside a class (14.5.2): member
+ * function templates (constructors included), member class templates and
+ * member alias templates.
+ *
+ * @param {Object} record The enclosing class.
+ * @returns {void}
+ */
+Parser.prototype.parseMemberTemplate = function (record) {
+  var keyword = this.next();
+  var open;
+  var params;
+  var start;
+  var info;
+  var decl;
+  if (this.isPunct('<') && this.isPunct('>', 1)) {
+    this.fail('explicit specialization of a member in class scope is not supported', keyword);
+  }
+  open = this.expectPunct('<', 'after \'template\'');
+  params = this.parseTemplateParameters(open);
+  start = this._pos;
+  info = this._templatedDeclarationInfo(params, keyword, record);
+  if (info.partial) {
+    return;
+  }
+  info.tokenStart = start;
+  info.tokenEnd = this._pos;
+  decl = this.sema.actOnTemplateDecl(info, { noDeclare: !!info.isConstructor });
+  if (!decl.access) {
+    decl.access = record.access;
+  }
+  decl.isMember = true;
+  decl.isStatic = !!(info.pattern && info.pattern.isStatic);
+  if (info.isConstructor) {
+    // Constructor templates are not found by name lookup (12.1/2).
+    decl.isConstructorTemplate = true;
+    record.constructorTemplates = (record.constructorTemplates || []).concat([decl]);
+  }
+  if (record.members.indexOf(decl) === -1) {
+    record.members.push(decl);
+  }
+};
+
+/**
  * template-parameter-list: `typename T`, `class... Ts`, `int N = 3`.
  * Parameter names are visible to later parameters' types and defaults.
  */
@@ -254,7 +301,7 @@ Parser.prototype._checkTemplateParameters = function (params) {
  *
  * @returns {Object} Info for Sema.actOnTemplateDecl.
  */
-Parser.prototype._templatedDeclarationInfo = function (params, keyword) {
+Parser.prototype._templatedDeclarationInfo = function (params, keyword, record) {
   var tok = this.peek();
   var nameTok;
   var isDefinition;
@@ -295,6 +342,19 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword) {
   if (this.isKeyword('template')) {
     this.fail('member templates of class templates are not supported yet');
   }
+  if (record && this._startsConstructor(record)) {
+    if (this.isPunct('~') || this.isPunct('~', 1)) {
+      this.fail('destructor cannot be declared as a template');
+    }
+    nameTok = this._functionTemplateName();
+    pattern = this._parseSignaturePattern(params, record);
+    this._skipDefinitionRest();
+    return { name: record.name, params: params, templateKind: 'function', isConstructor: true,
+      isDefinition: this.isPunct('}', -1), pattern: pattern, range: this.rangeOf(nameTok) };
+  }
+  if (record && this._startsConversionFunction()) {
+    this.fail('conversion function templates are not supported yet');
+  }
   nameTok = this._functionTemplateName();
   pattern = this._parseSignaturePattern(params);
   this._skipDefinitionRest();
@@ -309,7 +369,7 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword) {
  *
  * @returns {?{type: Object, requiredArgs: number, key: string}}
  */
-Parser.prototype._parseSignaturePattern = function (params) {
+Parser.prototype._parseSignaturePattern = function (params, constructorOf) {
   var state = this._saveState();
   var saved = this._swapDiagnostics();
   var placeholders = this.sema.placeholderArguments({ params: params });
@@ -323,9 +383,18 @@ Parser.prototype._parseSignaturePattern = function (params) {
     this.sema.scope = this.sema.bindTemplateParameters({ params: params,
       scope: this.sema.scope }, placeholders);
     this._patternMode = (this._patternMode || 0) + 1;
-    spec = this.parseDeclSpecifiers();
-    declarator = this.parseDeclarator(false);
-    type = this.sema.typeFromDeclarator(this.sema.typeFromSpecifiers(spec), declarator);
+    if (constructorOf) {
+      spec = this._parseConstructorSpecifiers();
+      declarator = this._constructorDeclarator().declarator;
+      type = this.sema.types.func(this.sema.types.builtin('void'),
+        declarator.suffixes[0].params.map(function (p) { return p.type; })
+          .map(this.sema.types.adjustParameter, this.sema.types),
+        { variadic: declarator.suffixes[0].variadic });
+    } else {
+      spec = this.parseDeclSpecifiers();
+      declarator = this.parseDeclarator(false);
+      type = this.sema.typeFromDeclarator(this.sema.typeFromSpecifiers(spec), declarator);
+    }
   } catch (err) {
     type = null;
     if (!(err instanceof require('./parser').ParseError)) {
@@ -349,9 +418,11 @@ Parser.prototype._parseSignaturePattern = function (params) {
     // A trailing function parameter pack takes any number of arguments.
     required = suffix.params.indexOf(pack);
     return { type: type, requiredArgs: required, key: this.sema.patternKey(type) + '...',
-      packAt: suffix.params.indexOf(pack), packParam: pack.packParam };
+      packAt: suffix.params.indexOf(pack), packParam: pack.packParam,
+      isStatic: spec.storage === 'static' };
   }
-  return { type: type, requiredArgs: required, key: this.sema.patternKey(type) };
+  return { type: type, requiredArgs: required, key: this.sema.patternKey(type),
+    isStatic: spec.storage === 'static' };
 };
 
 /**
@@ -867,10 +938,10 @@ Parser.prototype.processPendingInstantiations = function () {
  * @returns {boolean} Whether the body was deferred.
  */
 Parser.prototype._deferTemplateBody = function (decl, scope) {
-  if (!this._classInstantiations || !decl) {
+  if (!decl || (!this._classInstantiations && !this._memberTemplateScope)) {
     return false;
   }
-  decl.pendingBody = { pos: this._pos, scope: scope };
+  decl.pendingBody = { pos: this._pos, scope: this._memberTemplateScope || scope };
   if (decl.isVirtual || decl.methodKind === 'destructor') {
     // Virtual functions and destructors are needed by any object.
     this.sema.requireDefinition(decl);
@@ -916,7 +987,8 @@ Parser.prototype.instantiateFunctionTemplate = function (tmpl, args, sfinae) {
     this.sema.scope = bound;
     this._functionInstantiation = (this._functionInstantiation || 0) + 1;
     decls = this.withRecovery(function () {
-      return self.parseSimpleDeclaration();
+      return tmpl.isMember ? self._parseMemberSpecialization(tmpl, bound) :
+        self.parseSimpleDeclaration();
     });
     // The specialization is not a name of its own: in its body, the name
     // still denotes the template (and its overloads).
@@ -937,6 +1009,35 @@ Parser.prototype.instantiateFunctionTemplate = function (tmpl, args, sfinae) {
   }
   tmpl.instantiations[key] = decl;
   return decl;
+};
+
+/**
+ * Parses the declaration of a member function template specialization in
+ * its class, in a scope of its own: the specialization is not added to
+ * the class members, it is reached through the template.
+ *
+ * @returns {Array.<Object>} The FunctionDecl.
+ */
+Parser.prototype._parseMemberSpecialization = function (tmpl, bound) {
+  var record = tmpl.parent;
+  var scope = new Scope(ScopeKind.CLASS, bound, record);
+  var members = record.members.slice();
+  var constructors = record.constructors;
+  var access = record.access;
+  var decl;
+  scope.noMemberLookup = true;
+  this.sema.scope = scope;
+  this._memberTemplateScope = scope;
+  record.access = tmpl.access;
+  try {
+    this.parseMemberDeclaration(record);
+  } finally {
+    decl = record.members[record.members.length - 1];
+    record.members = members;
+    record.constructors = constructors;
+    record.access = access;
+  }
+  return decl && members.indexOf(decl) === -1 ? [decl] : [];
 };
 
 /**

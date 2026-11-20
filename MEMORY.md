@@ -1233,6 +1233,30 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   is the dependent type itself, so deduction sees through the alias.
 - **Reason**: same token-replay design as D-059; no alias node is needed.
 
+### D-064 — Member templates
+
+- **Status**: Accepted (agent, 2026-11-20; templates step T5).
+- **Decision**:
+  - `template <...>` inside a class declares a member TemplateDecl
+    (function, class or alias) in the class scope, with its access and
+    `static`; constructor templates are kept in `record.constructorTemplates`
+    (not found by name lookup) and join the constructor candidates;
+  - a member function specialization is parsed as a member declaration
+    of the class in a scope of its own (a class scope without member
+    lookup, so the template parameters stay visible): it is not added to
+    the class members or constructors, it is reached through the
+    template's instantiations; its body is deferred like other template
+    bodies;
+  - calls `obj.f(x)`, `obj.f<T>(x)`, `obj.template f<T>(x)`, `S::f<T>()`
+    and implicit `f(x)` in member functions deduce and instantiate member
+    templates as for free functions; the non-template tie-break of
+    13.3.3/1 also applies to constructors;
+  - `template` after `.`/`->` must name a member template.
+- **Reason**: reuses the class member parser, so specializations get all
+  member checks (const, static, constructors) without duplicated code.
+- **Not yet**: conversion function templates, out-of-line definitions of
+  member templates, explicit specializations of members.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

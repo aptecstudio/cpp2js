@@ -27,8 +27,9 @@ var ScopeKind = scopes.ScopeKind;
  *   'alias'), tokenStart, tokenEnd, isDefinition, range}`.
  * @returns {Object} TemplateDecl.
  */
-Sema.prototype.actOnTemplateDecl = function (info) {
-  var previous = this.scope.lookupLocal(info.name).filter(function (d) {
+Sema.prototype.actOnTemplateDecl = function (info, options) {
+  var noDeclare = !!(options && options.noDeclare);
+  var previous = noDeclare ? [] : this.scope.lookupLocal(info.name).filter(function (d) {
     // Function templates merge only with the same signature.
     return d.kind === 'TemplateDecl' && (info.templateKind !== 'function' ||
       (d.templateKind === 'function' && d.pattern && info.pattern &&
@@ -67,7 +68,7 @@ Sema.prototype.actOnTemplateDecl = function (info) {
   other = this.scope.lookupLocal(info.name).filter(function (d) {
     return d.kind !== 'TemplateDecl' && d.kind !== 'FunctionDecl';
   });
-  if (other.length && info.templateKind !== 'function') {
+  if (other.length && info.templateKind !== 'function' && !noDeclare) {
     diag = this.error('redefinition of \'' + info.name + '\' as different kind of symbol',
       info.range);
     this.note(diag, 'previous definition is here', other[0].range);
@@ -86,7 +87,9 @@ Sema.prototype.actOnTemplateDecl = function (info) {
   decl.instantiations = Object.create(null);
   decl.specializations = [];
   decl.qualifiedName = this.qualifiedName(decl);
-  this.scope.declare(info.name, decl);
+  if (!noDeclare) {
+    this.scope.declare(info.name, decl);
+  }
   return decl;
 };
 

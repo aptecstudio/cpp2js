@@ -528,7 +528,9 @@ Sema.prototype.construct = function (type, args, style, range) {
     // A prvalue of the same class initializes the object directly.
     return args[0];
   }
-  candidates = (record.constructors || []).filter(function (c) {
+  candidates = (record.constructors || []).concat(record.constructorTemplates ?
+    this._withTemplateCandidates({ candidates: [], templateCandidates:
+      record.constructorTemplates }, args, []) : []).filter(function (c) {
     // Explicit constructors are not candidates in copy-initialization.
     return !(style === 'copy' && c.isExplicit);
   });

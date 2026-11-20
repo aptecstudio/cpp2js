@@ -271,7 +271,7 @@ Sema.prototype._wins = function (a, b) {
 
 /** Whether candidate `a` is better than `b` (for constructors). */
 Sema.prototype._candidateBetter = function (a, b) {
-  return isBetter(a, b);
+  return this._wins(a, b);
 };
 
 Sema.prototype._callSingle = function (decl, args, range) {

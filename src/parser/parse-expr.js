@@ -332,6 +332,8 @@ Parser.prototype.parsePostfixExpression = function () {
   var index;
   var name;
   var savedDepth;
+  var disambiguated;
+  var explicit;
   for (;;) {
     tok = this.peek();
     if (tok.kind !== TokenKind.PUNCT) {
@@ -359,6 +361,8 @@ Parser.prototype.parsePostfixExpression = function () {
       case '.':
       case '->':
         this.next();
+        // `obj.template f<T>()` (14.2/4).
+        disambiguated = !!this.acceptKeyword('template');
         name = this.peek();
         if (name.kind !== TokenKind.IDENTIFIER) {
           this.fail(name.kind === TokenKind.PUNCT && name.value === '~' ?
@@ -367,6 +371,18 @@ Parser.prototype.parsePostfixExpression = function () {
         this.next();
         expr = this.sema.actOnMemberAccess(expr, name.value, tok.value === '->',
           this.rangeFrom(start), this.rangeOf(name));
+        if (expr && this.isPunct('<') && expr.templateCandidates &&
+            expr.templateCandidates.length) {
+          // `obj.f<int>(x)`: explicit template arguments of a member template.
+          explicit = this.parseTemplateArguments(expr.templateCandidates[0]);
+          if (explicit) {
+            expr.explicitTemplateArgs = explicit;
+          }
+        } else if (expr && disambiguated && !(expr.templateCandidates &&
+            expr.templateCandidates.length)) {
+          this.fail('\'' + name.value + '\' following the \'template\' keyword does not ' +
+            'refer to a template', name);
+        }
         break;
       case '++':
       case '--':
@@ -419,7 +435,16 @@ Parser.prototype._skipBalanced = function () {
 Parser.prototype.parseQualifiedIdExpression = function () {
   var first = this.peek();
   var name = this.parseQualifiedName();
-  return this.sema.actOnIdExpression(name.name, this.rangeFrom(first), name.qualifier);
+  var expr = this.sema.actOnIdExpression(name.name, this.rangeFrom(first), name.qualifier);
+  var explicit;
+  if (expr && this.isPunct('<') && expr.templateCandidates && expr.templateCandidates.length) {
+    // `N::f<int>(x)`, `S::make<T>()`: explicit template arguments.
+    explicit = this.parseTemplateArguments(expr.templateCandidates[0]);
+    if (explicit) {
+      expr.explicitTemplateArgs = explicit;
+    }
+  }
+  return expr;
 };
 
 /**

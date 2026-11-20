@@ -380,7 +380,8 @@ function lookupUnqualified(scope, name, options) {
 
     decls = applyTagHiding(current.lookupLocal(name), tagsOnly);
 
-    if (!decls.length && current.kind === ScopeKind.CLASS && current.entity) {
+    if (!decls.length && current.kind === ScopeKind.CLASS && current.entity &&
+        !current.noMemberLookup) {
       member = lookupMember(current.entity, name);
       if (member.ambiguous) {
         return { decls: member.decls, ambiguous: true, scope: current };

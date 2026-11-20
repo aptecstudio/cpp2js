@@ -244,3 +244,30 @@ test('substitutes alias templates', function () {
     'VarDecl p \'char *\'', 'VarDecl a \'int [3]\'', 'VarDecl l \'L<int, char>\'']);
   assert.deepEqual(lines(r, /^FunctionDecl take/), ['FunctionDecl take \'int (Box<int>)\'']);
 });
+
+test('instantiates member function templates', function () {
+  var r = ok('struct S {\n  template <class T> T get(T x) const { return x + k; }\n' +
+    '  template <class T> static T make() { return T(); }\n  int k;\n' +
+    '  int use() { return get(2) + make<int>(); }\n};\n' +
+    'int f() { S s; return s.get(1) + s.template get<int>(2) + s.get<char>(3) + ' +
+    'S::make<int>() + (&s)->get(4); }');
+  assert.deepEqual(lines(r, /^TemplateDecl/), ['TemplateDecl function get <typename T>',
+    'TemplateDecl function make <typename T>']);
+  assert.deepEqual(lines(r, /^FunctionDecl (get|make)/), [
+    'FunctionDecl get \'int (int) const\' public', 'FunctionDecl make \'int ()\' public',
+    'FunctionDecl get \'char (char) const\' public']);
+  assert.deepEqual(errorsOf('struct S { int g; };\nint f(S s) { return s.template g<int>(); }'),
+    ['\'g\' following the \'template\' keyword does not refer to a template']);
+});
+
+test('uses constructor templates and member templates of class templates', function () {
+  var r = ok('template <class T> struct W {\n  template <class U> W(U u) : v(u) {}\n' +
+    '  W(const W &o) : v(o.v) {}\n  T v;\n  template <class U> U as() const { return U(v); }\n};\n' +
+    'W<int> w(2.5); W<int> w2(w); double d = w.as<double>();');
+  assert.deepEqual(lines(r, /^ConstructExpr/).slice(0, 2), [
+    'ConstructExpr \'W<int>\' prvalue \'void (double)\' user',
+    'ConstructExpr \'W<int>\' prvalue \'void (const W<int> &)\' user']);
+  assert.deepEqual(lines(r, /^FunctionDecl as/), ['FunctionDecl as \'double () const\' public']);
+  ok('struct S { template <class U> struct In { U u; }; template <class U> using P = U *; };\n' +
+    'S::In<int> i; S::P<char> p; int x = i.u; char *q = p;');
+});

@@ -361,8 +361,10 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
     }
     decl = this.packElementDecl(decl);
   }
-  if (decl.kind === 'FieldDecl' || (decl.kind === 'FunctionDecl' && decl.isMethod &&
-      !decl.isStatic)) {
+  if (decl.kind === 'FieldDecl' || result.decls.some(function (d) {
+    return (d.kind === 'FunctionDecl' && d.isMethod && !d.isStatic) ||
+      (d.kind === 'TemplateDecl' && d.isMember && !d.isStatic && d.templateKind === 'function');
+  })) {
     return this.implicitMemberAccess(result.decls, range, qualifier &&
       qualifier.kind === 'RecordDecl' ? qualifier : null);
   }
