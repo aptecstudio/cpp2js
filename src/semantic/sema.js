@@ -439,6 +439,11 @@ Sema.prototype.declareVariable = function (spec, declarator, type) {
     linkage: spec.linkage || null
   });
   decl.autoSpec = this.containsAuto(type) ? spec : null;
+  if (this.scope.kind !== ScopeKind.NAMESPACE && this.scope.kind !== ScopeKind.CLASS &&
+      decl.storage !== 'static' && decl.storage !== 'extern') {
+    // Automatic variables may be captured by lambdas (D-057).
+    decl.ownerFunction = this.currentFunction();
+  }
   for (i = 0; i < previous.length; i++) {
     if (previous[i].kind === 'ParamDecl') {
       diag = this.error('redefinition of \'' + name + '\'', range);
@@ -660,6 +665,7 @@ Sema.prototype.actOnStartFunctionBody = function (decl) {
   this.pushScope(ScopeKind.FUNCTION, decl);
   params = decl.params;
   for (i = 0; i < params.length; i++) {
+    params[i].ownerFunction = decl;
     if (!params[i].name) {
       continue;
     }
@@ -1026,3 +1032,4 @@ require('./sema-inherit');
 require('./sema-operator');
 require('./sema-friend');
 require('./sema-cxx11');
+require('./sema-lambda');

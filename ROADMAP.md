@@ -19,15 +19,15 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 9 / 13   |
-| 6   | Semantic analysis                       | In progress  | 9 / 14   |
+| 5   | Parser and AST                          | In progress  | 10 / 13  |
+| 6   | Semantic analysis                       | In progress  | 10 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
 | 9   | Bundler                                 | Not started  | 0 / 6    |
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 14   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 65 / 124 items done.**
+**Overall: 67 / 124 items done.**
 
 ---
 
@@ -115,7 +115,8 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - [x] Statements: blocks, `if`, `switch`, loops, `break`/`continue`, `return`, `goto` (D-048).
 - [x] Expressions with full C++ precedence and associativity (D-047).
 - [x] Enumerations (including `enum class`) (D-049).
-- [ ] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas.
+- [x] C++11 syntax: `auto`, `nullptr`, range-based `for`, lambdas, `decltype`,
+  `static_assert` (D-055, D-056, D-057).
 - [ ] Templates (after the core works, D-010).
 - [ ] Syntax error recovery and diagnostics.
 - [ ] `__js__` statements/expressions in the AST (D-026).
@@ -134,7 +135,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   pending).
 - [x] `friend` functions and classes (D-054).
 - [x] Virtual functions and overriding (D-052).
-- [ ] `auto` type deduction and lambda captures.
+- [x] `auto` type deduction and lambda captures (D-055, D-057).
 - [ ] `extern "C"` linkage: no overloading, duplicate-name checks (D-014).
 - [ ] Semantic diagnostics.
 - [ ] `__js__`: checks of operands (lvalue outputs, types of `__js__<T>`) (D-026).
@@ -256,3 +257,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
 - **2026-11-19** — Parser step 5f: friends and static members (D-054); classes complete.
 - **2026-11-20** — Parser step 6a: auto, decltype, static_assert (D-055).
 - **2026-11-20** — Parser step 6b: range-based for (D-056).
+- **2026-11-20** — Parser step 6c: lambda expressions (D-057).

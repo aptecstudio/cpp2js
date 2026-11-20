@@ -362,6 +362,10 @@ Sema.prototype.actOnThis = function (range, implicit) {
   var method = this.currentMethod();
   var record;
   var type;
+  if (method && method.lambda) {
+    // Inside a lambda, `this` is the enclosing member function's object.
+    return this.lambdaThis(range, implicit);
+  }
   if (!method || method.isStatic) {
     if (!implicit) {
       this.error('invalid use of \'this\' outside of a non-static member function', range);
@@ -545,9 +549,14 @@ Sema.prototype._buildMemberExpr = function (object, objType, isArrow, decls, ran
  */
 Sema.prototype.implicitMemberAccess = function (decls, range, qualifier) {
   var member = decls[0];
+  var errors = this.diagnostics.errorCount;
   var self = this.actOnThis(range, true);
   var thisRecord;
   var result;
+  if (!self && this.diagnostics.errorCount > errors) {
+    // `this` could not be captured; already reported.
+    return null;
+  }
   if (!self) {
     if (member.kind === 'FieldDecl') {
       this.error('invalid use of non-static data member \'' + member.name + '\'', range);

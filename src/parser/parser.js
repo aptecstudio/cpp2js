@@ -1356,7 +1356,7 @@ Parser.prototype._startsParameters = function (offset) {
  * `( parameter-declaration-clause ) cv-qualifier-seq ref-qualifier
  * exception-specification trailing-return-type`
  */
-Parser.prototype.parseFunctionSuffix = function () {
+Parser.prototype.parseFunctionSuffix = function (isLambda) {
   var open = this.expectPunct('(');
   var suffix = { kind: 'function', params: [], variadic: false, isConst: false,
     isVolatile: false, refQualifier: '', noexcept: null, trailingReturn: null, range: null };
@@ -1378,7 +1378,13 @@ Parser.prototype.parseFunctionSuffix = function () {
     }
   }
   this.expectPunct(')', '', open);
+  if (isLambda && this.acceptKeyword('mutable')) {
+    suffix.isMutable = true;
+  }
   for (;;) {
+    if (isLambda) {
+      break;
+    }
     if (this.acceptKeyword('const')) {
       suffix.isConst = true;
     } else if (this.acceptKeyword('volatile')) {

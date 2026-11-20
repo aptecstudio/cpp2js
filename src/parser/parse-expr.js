@@ -512,10 +512,69 @@ Parser.prototype.parsePrimaryExpression = function () {
         return this.sema.actOnParenExpr(inner, this.rangeFrom(tok));
       }
       if (tok.value === '[') {
-        this.fail('lambda expressions are not supported yet');
+        return this.parseLambdaExpression();
       }
       break;
   }
   this.fail('expected expression');
   return null;
 };
+
+/**
+ * lambda-expression (C++11 5.1.2):
+ * `[captures] (params) mutable noexcept -> R { body }`.
+ */
+Parser.prototype.parseLambdaExpression = function () {
+  var open = this.next();
+  var intro = { captureDefault: null, captures: [] };
+  var suffix;
+  var info;
+  var body = null;
+  var savedBreakables;
+  var tok;
+  var byReference;
+  if ((this.isPunct('=') || this.isPunct('&')) && (this.isPunct(',', 1) ||
+      this.isPunct(']', 1))) {
+    intro.captureDefault = this.next().value;
+    this.acceptPunct(',');
+  }
+  while (!this.isPunct(']')) {
+    tok = this.peek();
+    byReference = !!this.acceptPunct('&');
+    if (this.acceptKeyword('this')) {
+      intro.captures.push({ isThis: true, range: this.rangeOf(tok) });
+    } else if (this.peek().kind === TokenKind.IDENTIFIER) {
+      intro.captures.push({ name: this.next().value, byReference: byReference,
+        range: this.rangeFrom(tok) });
+    } else {
+      this.fail('expected variable name or \'this\' in lambda capture list');
+    }
+    if (!this.acceptPunct(',')) {
+      break;
+    }
+  }
+  this.expectPunct(']', '', open);
+  if (this.isPunct('(')) {
+    suffix = this.parseFunctionSuffix(true);
+  } else {
+    suffix = { kind: 'function', params: [], variadic: false, isConst: false,
+      isVolatile: false, refQualifier: '', trailingReturn: null, range: this.rangeOf(open) };
+    if (this.isKeyword('mutable') || this.isPunct('->')) {
+      this.fail('lambda requires \'()\' before \'' + this.peek().value + '\'');
+    }
+  }
+  if (!this.isPunct('{')) {
+    this.fail('expected body of lambda expression');
+  }
+  info = this.sema.actOnStartLambda(intro, suffix, this.rangeOf(open));
+  // break and continue cannot leave a lambda body.
+  savedBreakables = this.sema._breakableStack;
+  this.sema._breakableStack = [];
+  try {
+    body = this.parseCompoundStatement(false);
+  } finally {
+    this.sema._breakableStack = savedBreakables;
+  }
+  return this.sema.actOnFinishLambda(info, body, this.rangeFrom(open));
+};
+

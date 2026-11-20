@@ -280,6 +280,11 @@ Sema.prototype.checkModifiable = function (expr, range) {
       '\' with const-qualified type ' + this.quote(expr.member.type), expr.range);
     return false;
   }
+  if (expr.type.isConst && expr.kind === 'DeclRefExpr' && expr.capturedByCopy) {
+    this.error('cannot assign to a variable captured by copy in a non-mutable lambda',
+      expr.range);
+    return false;
+  }
   if (expr.type.isConst) {
     decl = expr.kind === 'DeclRefExpr' ? expr.decl : null;
     this.error(decl ? 'cannot assign to variable \'' + decl.name +
@@ -355,6 +360,10 @@ Sema.prototype.actOnIdExpression = function (name, range, qualifier) {
       !this.checkAccess(decl, qualifier && qualifier.kind === 'RecordDecl' ? qualifier :
         decl.parent, range)) {
     return null;
+  }
+  if ((decl.kind === 'VarDecl' || decl.kind === 'ParamDecl') && decl.ownerFunction &&
+      decl.ownerFunction !== this.currentFunction()) {
+    return this.captureVariable(decl, range);
   }
   switch (decl.kind) {
     case 'VarDecl':
@@ -1696,6 +1705,14 @@ Sema.prototype.actOnReturnStatement = function (value, range, hadValue) {
   var result;
   if (!fn) {
     return ast.createNode('ReturnStmt', range, { value: value });
+  }
+  if (fn.lambda && fn.lambda.deduceReturn) {
+    if (hadValue && !value) {
+      // The value was wrong: do not deduce `void` from it.
+      fn.lambda.returnFailed = true;
+      return ast.createNode('ReturnStmt', range, { value: null });
+    }
+    return this.lambdaReturn(fn.lambda, value, range);
   }
   returnType = fn.type.returnType;
   if (T.isVoid(returnType)) {

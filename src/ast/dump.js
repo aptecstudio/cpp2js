@@ -170,6 +170,18 @@ function describe(node) {
         parts.push('virtual');
       }
       break;
+    case 'LambdaExpr':
+      parts.push(quote(node.type), node.valueCategory, quote(node.returnType));
+      if (node.captureDefault) {
+        parts.push('[' + node.captureDefault + ']');
+      }
+      if (node.isMutable) {
+        parts.push('mutable');
+      }
+      break;
+    case 'LambdaCapture':
+      parts.push((node.byReference ? '&' : '') + node.variable.name);
+      break;
     case 'BaseSpecifier':
       parts.push(node.access, T.typeToString(node.type));
       break;
@@ -196,6 +208,9 @@ function describe(node) {
       break;
     case 'DeclRefExpr':
       parts.push(node.decl.name, quote(node.type), node.valueCategory);
+      if (node.isCapture) {
+        parts.push(node.capturedByCopy ? 'captured-copy' : 'captured-ref');
+      }
       break;
     case 'CastExpr':
       parts.push(quote(node.type), node.valueCategory, '<' + node.conversion + '>');

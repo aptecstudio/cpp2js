@@ -110,3 +110,72 @@ test('reports invalid ranges', function () {
   assert.deepEqual(errorsOf('void f() { int a[2]; for (int *x : a) {} }'),
     ['cannot initialize a variable of type \'int *\' with an lvalue of type \'int\'']);
 });
+
+test('builds closures and call operators', function () {
+  var r = ok('int main() {\n  int base = 10, hits = 0;\n' +
+    '  auto add = [base](int x) { return x + base; };\n' +
+    '  auto count = [&hits]() mutable { ++hits; };\n' +
+    '  auto both = [&](int y) -> long { hits += y; return base; };\n' +
+    '  return add(1) + both(2);\n}');
+  assert.deepEqual(r.dump.split('\n').filter(function (l) {
+    return /LambdaExpr|LambdaCapture|captured/.test(l);
+  }).map(function (l) { return l.trim(); }), [
+    'LambdaExpr \'(lambda at t.cpp:3:14)\' prvalue \'int\'', 'LambdaCapture base',
+    'DeclRefExpr base \'const int\' lvalue captured-copy',
+    'LambdaExpr \'(lambda at t.cpp:4:16)\' prvalue \'void\' mutable', 'LambdaCapture &hits',
+    'DeclRefExpr hits \'int\' lvalue captured-ref',
+    'LambdaExpr \'(lambda at t.cpp:5:15)\' prvalue \'long\' [&]', 'LambdaCapture &hits',
+    'LambdaCapture &base', 'DeclRefExpr hits \'int\' lvalue captured-ref',
+    'DeclRefExpr base \'int\' lvalue captured-ref']);
+});
+
+test('converts captureless lambdas to function pointers', function () {
+  ok('int apply(int (*fn)(int), int v) { return fn(v); }\n' +
+    'int f() { return apply([](int x) { return x * 2; }, 3); }');
+  assert.deepEqual(errorsOf('int apply(int (*fn)(int), int v);\n' +
+    'int f(int k) { return apply([k](int x) { return x * k; }, 3); }'),
+    ['cannot initialize a parameter of type \'int (*)(int)\' with an rvalue of type ' +
+      '\'(lambda at t.cpp:2:29)\'']);
+});
+
+test('captures this in member functions', function () {
+  ok('struct C { int n = 0; void bump() { auto f = [this] { n++; }; f(); ' +
+    'auto g = [=] { return n; }; g(); } };');
+  assert.deepEqual(errorsOf('struct C { int n; void f() { [] { return n; }; } };'),
+    ['\'this\' cannot be implicitly captured in this context']);
+  assert.deepEqual(errorsOf('void f() { [this] {}; }'),
+    ['invalid use of \'this\' outside of a non-static member function']);
+});
+
+test('checks captures', function () {
+  assert.deepEqual(errorsOf('int f(int base) { auto l = [](int x) { return x + base; }; ' +
+    'return l(1); }'),
+    ['variable \'base\' cannot be implicitly captured in a lambda with no capture-default ' +
+      'specified']);
+  assert.deepEqual(errorsOf('void f(int b) { [b]() { b = 1; }; }'),
+    ['cannot assign to a variable captured by copy in a non-mutable lambda']);
+  ok('void f(int b) { [b]() mutable { b = 1; }; [&b]() { b = 2; }; }');
+  assert.deepEqual(errorsOf('void f(int b) { [b, b] {}; }'),
+    ['\'b\' can appear only once in a capture list']);
+  assert.deepEqual(errorsOf('void f(int b) { [=, b] {}; }'),
+    ['\'&\' must precede a capture when the capture default is \'=\'']);
+  assert.deepEqual(errorsOf('void f(int b) { [&, &b] {}; }'),
+    ['\'&\' cannot precede a capture when the capture default is \'&\'']);
+  assert.deepEqual(errorsOf('int g;\nvoid f() { [g] {}; }'),
+    ['\'g\' cannot be captured because it does not have automatic storage duration']);
+  ok('int g;\nvoid f() { static int s; [] { return g + s; }; }');
+  ok('void f(int a) { [=] { [=] { return a; }; }; [&] { [a] { return a; }; }; }');
+  assert.deepEqual(errorsOf('void f(int a) { [] { [=] { return a; }; }; }'),
+    ['variable \'a\' cannot be implicitly captured in a lambda with no capture-default ' +
+      'specified']);
+});
+
+test('deduces lambda return types', function () {
+  assert.deepEqual(errorsOf('void f() { [](bool b) { if (b) return 1; return 2.5; }; }'),
+    ['return type \'double\' must match previous return type \'int\' when lambda expression ' +
+      'has unspecified explicit return type']);
+  ok('void f() { [](bool b) -> double { if (b) return 1; return 2.5; }; ' +
+    '[](bool b) { if (b) return 1; return 2; }; }');
+  assert.deepEqual(errorsOf('void f() { while (true) { [] { break; }; } }'),
+    ['\'break\' statement not in loop or switch statement']);
+});

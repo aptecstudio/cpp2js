@@ -1045,6 +1045,36 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
 - **Reason**: code generation gets every operation already resolved
   (overloaded `!=`, `++`, `*` included).
 
+### D-057 — Lambda expressions
+
+- **Status**: Accepted (agent, 2026-11-20; part of step 6c approved by the
+  owner).
+- **Decision**: `src/semantic/sema-lambda.js` and
+  `Parser.parseLambdaExpression`:
+  - each lambda gets a unique closure class named like Clang
+    (`(lambda at file:line:col)`) with a public `operator()` (const
+    unless `mutable`), one private member per capture, deleted default
+    constructor and assignment, and — without captures — an implicit
+    conversion to a function pointer;
+  - the body is a function scope nested in the enclosing scope; every
+    automatic variable records its function (`ownerFunction`); using one
+    of an enclosing function captures it on every lambda in between,
+    explicitly (`[x]`, `[&x]`) or through the default (`[=]`, `[&]`),
+    otherwise Clang's "cannot be implicitly captured" error with notes.
+    Copies are const in non-mutable lambdas; `DeclRefExpr` records
+    `isCapture`/`capturedByCopy`;
+  - `this` in a lambda is the enclosing member function's object and
+    must be captured (`[this]`, or implicitly by a default); capture
+    lists are validated (duplicates, `[=, x]`, `[&, &x]`, non-automatic
+    variables);
+  - without `-> R` the return type is deduced from the returns, which
+    must all agree (the C++14 rule GCC and Clang also apply in C++11
+    mode); no return gives `void`; `break`/`continue` cannot leave the
+    body.
+- **Reason**: C++11 5.1.2; the explicit capture list in the AST is what
+  code generation needs to build JavaScript closures (D-057 hands them
+  over to Phase 7).
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).
