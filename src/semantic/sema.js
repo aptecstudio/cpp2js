@@ -690,6 +690,7 @@ Sema.prototype.actOnStartFunctionBody = function (decl) {
   var prev = decl.previous;
   var diag;
   var i;
+  decl.errorsBeforeBody = this.diagnostics.errorCount;
   var params;
   var packs;
   while (prev) {

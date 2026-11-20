@@ -205,8 +205,10 @@ test('resolves names and reports undeclared ones', function () {
 
 test('recovers from syntax errors', function () {
   var r = parse('int a = 1\nint b;\nint 3;\nint d;\nfoo e;\nint f;\n}\nint g;');
-  assert.deepEqual(r.errors, ['expected \';\' after declaration', 'expected unqualified-id',
-    'unknown type name \'foo\'', 'extraneous closing brace (\'}\')']);
+  assert.deepEqual(r.errors, ['expected \';\' after top level declarator',
+    'expected unqualified-id', 'unknown type name \'foo\'', 'extraneous closing brace (\'}\')']);
+  // A `;` missing at the end of a line is taken as present.
+  assert.ok(/VarDecl b 'int'/.test(r.dump));
   assert.ok(/VarDecl d 'int'/.test(r.dump));
   assert.ok(/VarDecl f 'int'/.test(r.dump));
   assert.ok(/VarDecl g 'int'/.test(r.dump));
@@ -221,4 +223,23 @@ test('reports expected tokens at the end of the previous line', function () {
   var r = parse('int a = 1\nint b;');
   var d = r.bag.getAll()[0];
   assert.equal(d.start, 9);
+});
+
+test('recovers from missing semicolons like Clang', function () {
+  var r = parse('struct S { int a; }\nint f() { int x = 1\n  return x; }\n' +
+    'enum E { e1 }\nstruct O { int m\n};\ntemplate <class T> struct X { T v; }\nint y;');
+  assert.deepEqual(r.errors, ['expected \';\' after struct', 'expected \';\' at end of declaration',
+    'expected \';\' after enum', 'expected \';\' at end of declaration list',
+    'expected \';\' after struct']);
+  assert.deepEqual(r.warnings, []);
+  assert.ok(/FunctionDecl f 'int \(\)'/.test(r.dump));
+  assert.ok(/VarDecl y 'int'/.test(r.dump));
+});
+
+test('reports unknown type names and stray tokens', function () {
+  assert.deepEqual(errorsOf('int f(bar b) { foo y = 3; return y; }'),
+    ['unknown type name \'bar\'', 'unknown type name \'foo\'']);
+  assert.deepEqual(errorsOf('int f(int a, ) { return a; }'), ['expected parameter declarator']);
+  // No `does not return a value` warning after an error in the body.
+  assert.deepEqual(parse('int f() { return (1 + ; }').warnings, []);
 });

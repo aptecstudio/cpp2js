@@ -1338,6 +1338,30 @@ Each entry: **ID — title**, status, decision, reason, discarded alternatives.
   symbol linking (Phase 9).
 - **Reason**: D-014 requires stable unmangled exports.
 
+### D-069 — Syntax error recovery
+
+- **Status**: Accepted (agent, 2026-11-20).
+- **Decision**: the parser keeps D-035's model (a ParseError unwinds to
+  the enclosing declaration or statement, which skips to `;` or `}`), and
+  adds Clang's main recoveries:
+  - a `;` missing before a new line, a `}` or the end of file is reported
+    and taken as present (`expectSemi`), so the next line is parsed
+    normally; on the same line the construct is skipped as before;
+  - after a class or enum definition, a token that cannot continue the
+    declaration (a type keyword, a type name on the next line, `}`, end
+    of file) gives `expected ';' after struct` and ends the declaration;
+  - `foo x` with an unknown `foo` (also in statements and parameters) is
+    `unknown type name 'foo'`, typed as `int`;
+  - a trailing `,` in a parameter list is `expected parameter declarator`;
+  - `non-void function does not return a value` is not reported for a
+    function whose body had errors (recovery may have dropped a return);
+  - messages follow Clang: `after top level declarator` (namespace
+    scope), `at end of declaration` (blocks), `at end of declaration list`
+    (classes); brackets keep their `to match this '('` notes.
+- **Reason**: fewer cascading errors with Clang-compatible output.
+- **Not done**: an error limit (Clang's `-ferror-limit`, default 20) would
+  need a CLI flag; to be decided with the owner.
+
 ### D-022 — In-house test runner
 
 - **Status**: Accepted (agent, 2026-11-19; owner approved proceeding).

@@ -158,6 +158,68 @@ Parser.prototype.expectPunct = function (value, context, opener) {
   throw new ParseError();
 };
 
+/** Keywords that cannot follow a class or enum definition in a declaration. */
+var NOT_AFTER_TAG = { 'void': 1, 'bool': 1, 'char': 1, 'wchar_t': 1, 'char16_t': 1,
+  'char32_t': 1, 'short': 1, 'int': 1, 'long': 1, 'float': 1, 'double': 1, 'signed': 1,
+  'unsigned': 1, 'auto': 1, 'class': 1, 'struct': 1, 'union': 1, 'enum': 1, 'namespace': 1,
+  'template': 1, 'using': 1, 'typename': 1, 'public': 1, 'private': 1, 'protected': 1,
+  'return': 1, 'if': 1, 'for': 1, 'while': 1, 'do': 1, 'switch': 1, 'friend': 1,
+  'virtual': 1, 'explicit': 1, 'static_assert': 1, 'extern': 0, 'decltype': 1 };
+
+/**
+ * After a class or enum definition (`tagKeyword` started it), a token that
+ * cannot continue the declaration means the `;` was forgotten: reported
+ * as Clang's `expected ';' after struct`, and the `;` is taken as present.
+ *
+ * @returns {boolean} Whether the `;` was missing.
+ */
+Parser.prototype._missingSemiAfterTag = function (tagKeyword) {
+  var tok = this.peek();
+  var info;
+  if (!this.isPunct('}', -1)) {
+    return false;
+  }
+  if (tok.kind === TokenKind.KEYWORD) {
+    if (!NOT_AFTER_TAG[tok.value]) {
+      return false;
+    }
+  } else if (tok.kind === TokenKind.IDENTIFIER) {
+    // A type name on the next line starts another declaration.
+    info = tok.lineStart ? this.sema.classifyName(tok.value) : null;
+    if (!info || (info.kind !== 'type' && info.kind !== 'template') ||
+        this.peek(1).kind === TokenKind.PUNCT) {
+      return false;
+    }
+  } else if (!(tok.kind === TokenKind.EOF || (tok.kind === TokenKind.PUNCT &&
+      tok.value === '}'))) {
+    return false;
+  }
+  this.diagnostics.error('expected \';\' after ' + tagKeyword.value,
+    this.rangeOf(this._expectedAt(tok)));
+  return true;
+};
+
+/**
+ * Consumes the `;` that ends a declaration or statement. When it is
+ * missing before a new line (or a `}`), the error is reported and parsing
+ * goes on as if it were there, like Clang; otherwise it fails.
+ *
+ * @param {string} context Appended to the message (`after expression`).
+ * @returns {void}
+ */
+Parser.prototype.expectSemi = function (context) {
+  var tok = this.peek();
+  if (this.acceptPunct(';')) {
+    return;
+  }
+  if (tok.lineStart || tok.kind === TokenKind.EOF || (tok.kind === TokenKind.PUNCT &&
+      tok.value === '}')) {
+    this.diagnostics.error('expected \';\' ' + context, this.rangeOf(this._expectedAt(tok)));
+    return;
+  }
+  this.expectPunct(';', context);
+};
+
 /**
  * Where a missing token is reported: Clang points at the end of the
  * previous token when the next one is on another line.
@@ -484,7 +546,7 @@ Parser.prototype.parseNamespace = function (isInline, leading) {
   }
   if (nameTok && this.acceptPunct('=')) {
     target = this.parseNamespaceName();
-    this.expectPunct(';', 'after namespace alias');
+    this.expectSemi('after namespace alias');
     return this.sema.actOnNamespaceAlias(nameTok.value, target, this.rangeOf(nameTok));
   }
   jsModule = this._jsModuleAttribute(attributes);
@@ -540,7 +602,7 @@ Parser.prototype.parseUsingDirective = function () {
   var target;
   this.next();
   target = this.parseNamespaceName();
-  this.expectPunct(';', 'after using directive');
+  this.expectSemi('after using directive');
   return this.sema.actOnUsingDirective(target, this.rangeFrom(start));
 };
 
@@ -553,7 +615,7 @@ Parser.prototype.parseUsingDeclaration = function () {
   if (!name.qualifier) {
     this.fail('using declaration requires a qualified name', name.nameToken);
   }
-  this.expectPunct(';', 'after using declaration');
+  this.expectSemi('after using declaration');
   return this.sema.actOnUsingDeclaration(name.qualifier, name.name, this.rangeFrom(start));
 };
 
@@ -709,7 +771,7 @@ Parser.prototype.parseAliasDeclaration = function () {
   var type;
   this.next();
   type = this.parseTypeId();
-  this.expectPunct(';', 'after alias declaration');
+  this.expectSemi('after alias declaration');
   return this.sema.declareTypedef(nameTok.value, type, this.rangeOf(nameTok), true);
 };
 
@@ -732,7 +794,7 @@ Parser.prototype.parseSimpleDeclaration = function () {
   var declarator;
   var decl;
   var saved;
-  if (this.acceptPunct(';')) {
+  if (spec.missingSemi || this.acceptPunct(';')) {
     if (spec.tagDecl) {
       return [spec.tagDecl];
     }
@@ -786,11 +848,8 @@ Parser.prototype.parseSimpleDeclaration = function () {
       break;
     }
   }
-  if (!this.isPunct(';')) {
-    this.expectPunct(';', decls.length && decls[0].kind === 'FunctionDecl' ?
-      'after top level declarator' : 'after declaration');
-  }
-  this.next();
+  this.expectSemi(this.sema.scope.kind === 'namespace' || this.sema.scope.kind === 'template' ?
+    'after top level declarator' : 'at end of declaration');
   return decls;
 };
 
@@ -932,11 +991,19 @@ Parser.prototype.parseDeclSpecifiers = function () {
       } else if (tok.value === 'enum' && !hasType) {
         spec.namedType = this.parseEnumSpecifier(spec);
         hasType = true;
+        if (this._missingSemiAfterTag(tok)) {
+          spec.missingSemi = true;
+          break;
+        }
         continue;
       } else if ((tok.value === 'class' || tok.value === 'struct' || tok.value === 'union') &&
           !hasType) {
         spec.namedType = this.parseClassSpecifier(spec);
         hasType = true;
+        if (this._missingSemiAfterTag(tok)) {
+          spec.missingSemi = true;
+          break;
+        }
         continue;
       } else {
         break;
@@ -1193,7 +1260,7 @@ Parser.prototype.parseStaticAssert = function () {
       this.rangeOf(this.peek()));
   }
   this.expectPunct(')', '', open);
-  this.expectPunct(';', 'after static_assert');
+  this.expectSemi('after static_assert');
   return this.sema.actOnStaticAssert(condition, message, this.rangeFrom(keyword));
 };
 
@@ -1235,7 +1302,10 @@ Parser.prototype.startsDeclSpecifier = function (offset) {
     // starts a declaration (the error is reported there).
     return !!scan && !scan.error && (scan.info.kind === 'type' || scan.info.kind === 'error' ||
       (scan.info.kind === 'template' && scan.info.decls[0].templateKind === 'class' &&
-        this._looksLikeDeclaratorStart(offset + scan.length)));
+        this._looksLikeDeclaratorStart(offset + scan.length)) ||
+      // `foo x` with an unknown `foo`: a declaration with an unknown type name.
+      (scan.info.kind === 'unknown' && !scan.qualifier &&
+        this.peek(offset + scan.length).kind === TokenKind.IDENTIFIER));
   }
   return false;
 };
@@ -1516,6 +1586,9 @@ Parser.prototype.parseFunctionSuffix = function (isLambda) {
           suffix.variadic = true;
         }
         break;
+      }
+      if (this.isPunct(')')) {
+        this.diagnostics.error('expected parameter declarator', this.rangeOf(this.peek()));
       }
     }
   }

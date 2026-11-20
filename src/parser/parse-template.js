@@ -328,7 +328,7 @@ Parser.prototype._templatedDeclarationInfo = function (params, keyword, record) 
     } else {
       this._skip(2);
     }
-    this.expectPunct(';', 'after class');
+    this.expectSemi('after ' + tok.value);
     return { name: nameTok.value, params: params, templateKind: 'class',
       isDefinition: isDefinition, range: this.rangeOf(nameTok) };
   }
@@ -535,7 +535,7 @@ Parser.prototype.parsePartialSpecialization = function (params) {
   }
   this._skipTo('{');
   this._skipBraces();
-  this.expectPunct(';', 'after class');
+  this.expectSemi('after ' + this._tokens[tokenStart].value);
   primary.specializations.push({ params: params, patternArgs: patternArgs,
     tokenStart: tokenStart, range: this.rangeOf(nameTok) });
   return { partial: true };
@@ -585,7 +585,7 @@ Parser.prototype.parseExplicitSpecialization = function () {
     if (this.isPunct('{')) {
       this.parseClassBody(record);
     }
-    this.expectPunct(';', 'after class');
+    this.expectSemi('after ' + tag);
     this.sema.finishClassInstantiation(record);
     return [];
   }

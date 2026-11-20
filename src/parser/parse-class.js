@@ -259,7 +259,7 @@ Parser.prototype.parseMemberDeclaration = function (record) {
     this._parseFriend(record, spec);
     return;
   }
-  if (this.acceptPunct(';')) {
+  if (spec.missingSemi || this.acceptPunct(';')) {
     if (spec.tagDecl) {
       this._memberAccess(spec.tagDecl, record);
       return;
@@ -306,7 +306,7 @@ Parser.prototype.parseMemberDeclaration = function (record) {
       break;
     }
   }
-  this.expectPunct(';', 'after member declaration');
+  this.expectSemi('at end of declaration list');
 };
 
 Parser.prototype._memberAccess = function (decl, record) {
@@ -386,7 +386,7 @@ Parser.prototype._parseConstructorMember = function (record) {
     this.next();
     this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
       this.rangeOf(this.peek(-1)));
-    this.expectPunct(';', 'after member declaration');
+    this.expectSemi('at end of declaration list');
     return;
   }
   if (this.isPunct(':') || this.isPunct('{')) {
@@ -396,7 +396,7 @@ Parser.prototype._parseConstructorMember = function (record) {
     this._skipFunctionBody();
     return;
   }
-  this.expectPunct(';', 'after member declaration');
+  this.expectSemi('at end of declaration list');
 };
 
 /**
@@ -601,7 +601,7 @@ Parser.prototype._parseConversionMember = function (record) {
     this.sema.actOnDefaultedOrDeleted(decl, this.next().value === 'delete',
       this.rangeOf(this.peek(-1)));
   }
-  this.expectPunct(';', 'after member declaration');
+  this.expectSemi('at end of declaration list');
 };
 
 /** `= init` / `{init}` of a static data member declared in the class. */
@@ -641,7 +641,7 @@ Parser.prototype._parseFriend = function (record, spec) {
     this._skipBraces();
     return;
   }
-  this.expectPunct(';', 'after friend declaration');
+  this.expectSemi('after friend declaration');
 };
 
 /** Skips `< ... >` (with nested angle groups). */

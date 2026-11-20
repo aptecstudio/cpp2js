@@ -439,6 +439,10 @@ Sema.prototype._checkFallOffEnd = function (decl, body) {
   if (!this._canComplete(body)) {
     return;
   }
+  if (decl.errorsBeforeBody !== undefined && this.diagnostics.errorCount > decl.errorsBeforeBody) {
+    // Statements dropped by error recovery may have returned.
+    return;
+  }
   ast.walk(body, function (node) {
     if (node.kind === 'ReturnStmt') {
       hasReturn = true;

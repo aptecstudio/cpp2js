@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 2   | Infrastructure (CLI, diagnostics, tests)| In progress  | 7 / 8    |
 | 3   | Preprocessor                            | Done         | 9 / 9    |
 | 4   | Lexer                                   | Done         | 7 / 7    |
-| 5   | Parser and AST                          | In progress  | 12 / 13  |
+| 5   | Parser and AST                          | Done         | 13 / 13  |
 | 6   | Semantic analysis                       | In progress  | 13 / 14  |
 | 7   | Lowering and code generation            | Not started  | 0 / 13   |
 | 8   | Printer, minifier, source maps          | Not started  | 0 / 9    |
@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 | 10  | Runtime, standard library, JS bindings  | Not started  | 0 / 15   |
 | 11  | Quality, documentation, release         | Not started  | 0 / 7    |
 
-**Overall: 72 / 125 items done.**
+**Overall: 73 / 125 items done.**
 
 ---
 
@@ -119,7 +119,7 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   `static_assert` (D-055, D-056, D-057).
 - [x] Templates (D-059 to D-066): class and function templates, specializations,
   variadic, alias and member templates, out-of-line members, dependent names and values.
-- [ ] Syntax error recovery and diagnostics.
+- [x] Syntax error recovery and diagnostics (D-069).
 - [x] `__js__` statements/expressions in the AST (D-026, D-058).
 - [x] `extern "JS"` blocks and `[[js::module("...")]]` attributes on namespaces (D-031).
 
@@ -276,3 +276,4 @@ Developed together with Phase 6: the parser queries semantic analysis while pars
   remaining template features moved to Phase 10.
 - **2026-11-20** — Access control completed (D-067).
 - **2026-11-20** — `extern "C"` checks within a translation unit (D-068).
+- **2026-11-20** — Syntax error recovery (D-069); Phase 5 done.

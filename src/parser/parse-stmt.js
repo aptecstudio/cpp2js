@@ -93,11 +93,11 @@ Parser.prototype.parseStatement = function () {
         return this.parseDefaultStatement();
       case 'break':
         this.next();
-        this.expectPunct(';', 'after break statement');
+        this.expectSemi('after break statement');
         return this.sema.actOnBreak(this.rangeOf(tok));
       case 'continue':
         this.next();
-        this.expectPunct(';', 'after continue statement');
+        this.expectSemi('after continue statement');
         return this.sema.actOnContinue(this.rangeOf(tok));
       case 'goto':
         return this.parseGotoStatement();
@@ -106,7 +106,7 @@ Parser.prototype.parseStatement = function () {
         hadValue = !this.isPunct(';');
         value = !hadValue ? null :
           this.isPunct('{') ? this.parseBracedInitList() : this.parseExpression();
-        this.expectPunct(';', 'after return statement');
+        this.expectSemi('after return statement');
         return this.sema.actOnReturnStatement(value, this.rangeFrom(tok), hadValue);
       case '__js__':
         if (this.isPunct('(', 1)) {
@@ -128,7 +128,7 @@ Parser.prototype.parseStatement = function () {
     return ast.createNode('DeclStmt', this.rangeOf(tok), { decls: this.parseDeclaration() });
   }
   value = this.parseExpression();
-  this.expectPunct(';', 'after expression');
+  this.expectSemi('after expression');
   return value ? this.sema.actOnExpressionStatement(value, this.rangeFrom(tok)) :
     ast.createNode('NullStmt', this.rangeFrom(tok), {});
 };
@@ -287,7 +287,7 @@ Parser.prototype.parseGotoStatement = function () {
       'expected identifier');
   }
   this.next();
-  this.expectPunct(';', 'after goto statement');
+  this.expectSemi('after goto statement');
   return this.sema.actOnGoto(name.value, this.rangeFrom(keyword));
 };
 
@@ -330,7 +330,7 @@ Parser.prototype.parseDoStatement = function () {
   open = this.expectPunct('(', 'after \'while\'');
   node.condition = this.sema.actOnCondition(this.parseExpression());
   this.expectPunct(')', '', open);
-  this.expectPunct(';', 'after do/while statement');
+  this.expectSemi('after do/while statement');
   node.range = this.rangeFrom(keyword);
   return node;
 };
@@ -480,7 +480,7 @@ Parser.prototype.parseJsStatement = function () {
     }
   }
   this.expectPunct(')', '', open);
-  this.expectPunct(';', 'after inline JavaScript');
+  this.expectSemi('after inline JavaScript');
   return this.sema.actOnJsStatement(literal, outputs, inputs.map(function (i) {
     return i.expr;
   }), this.rangeFrom(keyword));
